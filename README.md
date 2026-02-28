@@ -78,9 +78,9 @@ int main() {
 
 ## 🚀 Future Roadmap
 - [x] Add line/column specific error tracking for malformed JSONs.
-- [ ] Optimize memory allocation using `std::string_view`.
+- [x] Optimize memory allocation using `std::string_view`.
 - [x] Add minified output generation.
-- [ ] Full UTF-8 character support.
+- [x] Full UTF-8 character support.
 
 ---
 *Built from scratch to understand the deep architecture behind data serialization.*
