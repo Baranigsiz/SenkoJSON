@@ -1,5 +1,6 @@
 #include "corejson/Lexer.h"
 #include <cctype>
+#include <cstdint> // FIXED: Added for uint32_t Support
 
 namespace corejson {
 
