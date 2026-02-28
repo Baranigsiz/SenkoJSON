@@ -3,86 +3,108 @@
 
 namespace corejson {
 
-Lexer::Lexer(const std::string& source) : m_source(source), m_position(0) {}
+Lexer::Lexer(const std::string& source) : m_source(source), m_position(0), m_line(1), m_column(1) {}
+
+void Lexer::skipWhitespace() {
+    while (m_position < m_source.length()) {
+        char current = m_source[m_position];
+        if (current == '\n') {
+            m_line++;
+            m_column = 1;
+            m_position++;
+        } else if (std::isspace(current)) {
+            m_column++;
+            m_position++;
+        } else {
+            break;
+        }
+    }
+}
 
 std::vector<Token> Lexer::tokenize() {
     std::vector<Token> tokens;
 
     while (m_position < m_source.length()) {
+        skipWhitespace();
+        if (m_position >= m_source.length()) break;
+
         char current = m_source[m_position];
+        int startLine = m_line;
+        int startColumn = m_column;
 
-        // 1. Ignore spaces and line breaks
-        if (std::isspace(current)) {
-            m_position++;
-            continue;
-        }
-
-        // 2. Catch single-character symbols
-        if (current == '{') { tokens.push_back({TokenType::CurlyOpen, "{"}); m_position++; }
-        else if (current == '}') { tokens.push_back({TokenType::CurlyClose, "}"}); m_position++; }
-        else if (current == '[') { tokens.push_back({TokenType::SquareOpen, "["}); m_position++; }
-        else if (current == ']') { tokens.push_back({TokenType::SquareClose, "]"}); m_position++; }
-        else if (current == ':') { tokens.push_back({TokenType::Colon, ":"}); m_position++; }
-        else if (current == ',') { tokens.push_back({TokenType::Comma, ","}); m_position++; }
-        
-        // 3. If you see a double quote, it's a String!
-        else if (current == '"') {
-            tokens.push_back(lexString());
-        }
-        // 4. If you see a digit or minus sign, start reading a number
-        else if (std::isdigit(current) || current == '-') {
-            tokens.push_back(lexNumber());
-        }
-        // 5. If you see a letter, start reading a keyword (true/false/null)
-        else if (std::isalpha(current)) {
-            tokens.push_back(lexKeyword());
-        }
+        if (current == '{') { tokens.push_back({TokenType::CurlyOpen, "{", startLine, startColumn}); m_position++; m_column++; }
+        else if (current == '}') { tokens.push_back({TokenType::CurlyClose, "}", startLine, startColumn}); m_position++; m_column++; }
+        else if (current == '[') { tokens.push_back({TokenType::SquareOpen, "[", startLine, startColumn}); m_position++; m_column++; }
+        else if (current == ']') { tokens.push_back({TokenType::SquareClose, "]", startLine, startColumn}); m_position++; m_column++; }
+        else if (current == ':') { tokens.push_back({TokenType::Colon, ":", startLine, startColumn}); m_position++; m_column++; }
+        else if (current == ',') { tokens.push_back({TokenType::Comma, ",", startLine, startColumn}); m_position++; m_column++; }
+        else if (current == '"') tokens.push_back(lexString());
+        else if (std::isdigit(current) || current == '-') tokens.push_back(lexNumber());
+        else if (std::isalpha(current)) tokens.push_back(lexKeyword());
         else {
-            m_position++; // Safely skip unknown characters
+            m_position++; m_column++;
         }
     }
     
-    // Add End Of File marker
-    tokens.push_back({TokenType::EndOfFile, ""});
+    tokens.push_back({TokenType::EndOfFile, "", m_line, m_column});
     return tokens;
 }
 
 Token Lexer::lexString() {
-    m_position++;
+    int startLine = m_line;
+    int startColumn = m_column;
+    m_position++; m_column++; // Skip opening "
+    
     std::string result = "";
     while (m_position < m_source.length() && m_source[m_position] != '"') {
+        if (m_source[m_position] == '\n') {
+            m_line++;
+            m_column = 1;
+        } else {
+            m_column++;
+        }
         result += m_source[m_position];
         m_position++;
     }
-    m_position++;
-    return {TokenType::String, result};
+    
+    if (m_position < m_source.length()) {
+        m_position++; m_column++; // Skip closing "
+    }
+    
+    return {TokenType::String, result, startLine, startColumn};
 }
 
 Token Lexer::lexNumber() {
+    int startLine = m_line;
+    int startColumn = m_column;
     std::string result = "";
     while (m_position < m_source.length() && 
            (std::isdigit(m_source[m_position]) || m_source[m_position] == '.' || 
             m_source[m_position] == '-' || m_source[m_position] == 'e' || m_source[m_position] == 'E')) {
         result += m_source[m_position];
         m_position++;
+        m_column++;
     }
-    return {TokenType::Number, result};
+    return {TokenType::Number, result, startLine, startColumn};
 }
 
 Token Lexer::lexKeyword() {
+    int startLine = m_line;
+    int startColumn = m_column;
     std::string result = "";
     while (m_position < m_source.length() && std::isalpha(m_source[m_position])) {
         result += m_source[m_position];
         m_position++;
+        m_column++;
     }
     
     if (result == "true" || result == "false") {
-        return {TokenType::Boolean, result};
+        return {TokenType::Boolean, result, startLine, startColumn};
     } else if (result == "null") {
-        return {TokenType::Null, result};
+        return {TokenType::Null, result, startLine, startColumn};
     }
     
-    return {TokenType::String, result}; // Fallback
+    return {TokenType::String, result, startLine, startColumn}; 
 }
 
 } // namespace corejson

@@ -16,11 +16,14 @@ public:
 private:
     std::string m_source; // We will store the JSON text here
     size_t m_position;    // Our pointer to track where we are in the text
-
+    int m_line;           // TRACKING: Current line
+    int m_column;         // TRACKING: Current column
+    
     // Helper functions
     Token lexString();
     Token lexNumber();
     Token lexKeyword();
+    void skipWhitespace(); // Added to centralize whitespace and line-break tracking
 };
 
 } // namespace corejson

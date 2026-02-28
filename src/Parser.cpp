@@ -39,7 +39,7 @@ JsonNode Parser::parseValue() {
         case TokenType::SquareOpen:
             return parseArray();
         default:
-            throw std::runtime_error("Unexpected JSON format!");
+            throw std::runtime_error("Unexpected token '" + token.value + "' at line " + std::to_string(token.line) + ", column " + std::to_string(token.column));
     }
 }
 
@@ -49,25 +49,44 @@ JsonNode Parser::parseObject() {
     
     advance(); // Skip '{'
 
-    while (current().type != TokenType::CurlyClose && current().type != TokenType::EndOfFile) {
+    if (current().type == TokenType::CurlyClose) {
+        advance();
+        return node;
+    }
+
+    while (true) {
         // Get the key
-        if (current().type != TokenType::String) throw std::runtime_error("Object key must be a string!");
+        if (current().type != TokenType::String) {
+            throw std::runtime_error("Object key must be a string at line " + std::to_string(current().line) + ", column " + std::to_string(current().column));
+        }
         std::string key = current().value;
         advance();
 
         // Skip the colon
-        if (current().type != TokenType::Colon) throw std::runtime_error("Expected ':' after key!");
+        if (current().type != TokenType::Colon) {
+            throw std::runtime_error("Expected ':' after key '" + key + "' at line " + std::to_string(current().line) + ", column " + std::to_string(current().column));
+        }
         advance();
 
         // Get the value (Recursion happens here)
         node.object_values[key] = parseValue();
 
-        // Skip comma if it exists
+        // After a value, we expect a comma OR a closing brace
         if (current().type == TokenType::Comma) {
             advance();
+            // Allow trailing comma? Standard JSON says NO, but let's be classic and expect another key or brace.
+            if (current().type == TokenType::CurlyClose) break; 
+        } else if (current().type == TokenType::CurlyClose) {
+            break;
+        } else {
+            throw std::runtime_error("Expected ',' or '}' after value at line " + std::to_string(current().line) + ", column " + std::to_string(current().column));
         }
     }
     
+    if (current().type != TokenType::CurlyClose) {
+        throw std::runtime_error("Expected '}' at line " + std::to_string(current().line) + ", column " + std::to_string(current().column));
+    }
+
     advance(); // Skip '}'
     return node;
 }
@@ -78,16 +97,30 @@ JsonNode Parser::parseArray() {
     
     advance(); // Skip '['
 
-    while (current().type != TokenType::SquareClose && current().type != TokenType::EndOfFile) {
+    if (current().type == TokenType::SquareClose) {
+        advance();
+        return node;
+    }
+
+    while (true) {
         // Add value to the array
         node.array_values.push_back(parseValue());
 
-        // Skip comma if it exists
+        // After a value, we expect a comma OR a closing bracket
         if (current().type == TokenType::Comma) {
             advance();
+            if (current().type == TokenType::SquareClose) break;
+        } else if (current().type == TokenType::SquareClose) {
+            break;
+        } else {
+            throw std::runtime_error("Expected ',' or ']' after array element at line " + std::to_string(current().line) + ", column " + std::to_string(current().column));
         }
     }
     
+    if (current().type != TokenType::SquareClose) {
+        throw std::runtime_error("Expected ']' at line " + std::to_string(current().line) + ", column " + std::to_string(current().column));
+    }
+
     advance(); // Skip ']'
     return node;
 }

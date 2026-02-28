@@ -21,6 +21,7 @@ public:
 
     JsonNode();
     JsonNode(const std::string& value);
+    JsonNode(const char* value); // ADDED: To prevent string literals converting to bool
     JsonNode(double value);
     JsonNode(bool value);
     

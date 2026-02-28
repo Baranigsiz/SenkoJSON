@@ -16,17 +16,19 @@ CoreJSON is designed to be lightweight and highly readable, making it perfect fo
 
 ```text
 CoreJSON/
-├── include/
+├── include/           # Header files
 │   └── corejson/
 │       ├── Token.h
 │       ├── Lexer.h
 │       ├── JsonNode.h
 │       └── Parser.h
-└── src/
-    ├── Lexer.cpp
-    ├── JsonNode.cpp
-    ├── Parser.cpp
-    └── main.cpp
+├── src/               # Source files
+│   ├── Lexer.cpp
+│   ├── JsonNode.cpp
+│   ├── Parser.cpp
+│   └── main.cpp       # Example Usage
+├── tests/             # Experimental & Test files
+└── apex_config.json   # Sample config file
 ```
 
 ## 🛠️ Getting Started
@@ -75,9 +77,9 @@ int main() {
 ```
 
 ## 🚀 Future Roadmap
-- [ ] Add line/column specific error tracking for malformed JSONs.
+- [x] Add line/column specific error tracking for malformed JSONs.
 - [ ] Optimize memory allocation using `std::string_view`.
-- [ ] Add minified output generation.
+- [x] Add minified output generation.
 - [ ] Full UTF-8 character support.
 
 ---
