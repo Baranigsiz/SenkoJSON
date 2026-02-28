@@ -1,0 +1,11 @@
+{
+    "game": "Apex Legends",
+    "hardware": {
+        "motherboard": "B450M PRO",
+        "storage": "NVMe SSD"
+    },
+    "performance": {
+        "max_fps": 144.0,
+        "reduce_lag": false
+    }
+}
