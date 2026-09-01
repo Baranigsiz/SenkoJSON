@@ -43,10 +43,8 @@ TEST_CASE("Errors - Permissive Config Mode (Comments & Trailing Comma)") {
     CHECK_THROWS(json::parse(config_with_comments, false, false));
 
     // Permissive mode should succeed
-    CHECK_NOTHROW({
-        json cfg = json::parse(config_with_comments, true, true);
-        CHECK_EQ(cfg["port"].get<int>(), 8080);
-        CHECK_EQ(cfg["workers"].get<int>(), 4);
-        CHECK_EQ(cfg["tags"].size(), 2);
-    });
+    json cfg = json::parse(config_with_comments, true, true);
+    CHECK_EQ(cfg["port"].get<int>(), 8080);
+    CHECK_EQ(cfg["workers"].get<int>(), 4);
+    CHECK_EQ(cfg["tags"].size(), 2);
 }
