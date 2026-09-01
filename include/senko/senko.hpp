@@ -3,12 +3,12 @@
 /**
  * @file senko.hpp
  * @brief Master header for SenkoJSON - A lightning-fast, modern, header-only C++ JSON library.
- * @version 2.2.0
+ * @version 2.3.0
  * @license MIT
  */
 
 #define SENKO_VERSION_MAJOR 2
-#define SENKO_VERSION_MINOR 2
+#define SENKO_VERSION_MINOR 3
 #define SENKO_VERSION_PATCH 0
 
 #include "fwd.hpp"
@@ -24,6 +24,7 @@
 #include "binary/msgpack.hpp"
 #include "binary/cbor.hpp"
 #include "macro.hpp"
+#include "schema.hpp"
 
 namespace senko {
 
@@ -35,6 +36,14 @@ namespace literals {
  */
 inline value operator""_json(const char* str, size_t len) {
     return value::parse(std::string_view(str, len));
+}
+
+inline value operator""_json(unsigned long long val) {
+    return value(static_cast<uint64_t>(val));
+}
+
+inline value operator""_json(long double val) {
+    return value(static_cast<double>(val));
 }
 
 /**

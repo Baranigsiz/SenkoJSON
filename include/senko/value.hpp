@@ -571,6 +571,9 @@ public:
     value merge_patch(const value& patch_doc) const;
     void merge_patch_in_place(const value& patch_doc);
     static value merge_patch(const value& target, const value& patch_doc);
+
+    // JSON Schema Validation declaration
+    bool validate(const value& schema_doc, std::string* error_out = nullptr) const;
 };
 
 // Stream operator for output

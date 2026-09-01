@@ -98,6 +98,35 @@ int main() {
         (void)s;
     }, 15000, medium_json.size());
 
+    std::cout << "\n--- Binary & Schema Engine Benchmarks ---\n";
+    auto msgpack_bytes = senko::to_msgpack(medium_doc);
+    benchmark("MessagePack Encode (630 B JSON)", [&]() {
+        auto bytes = senko::to_msgpack(medium_doc);
+        (void)bytes;
+    }, 20000, medium_json.size());
+
+    benchmark("MessagePack Decode", [&]() {
+        auto doc = senko::from_msgpack(msgpack_bytes);
+        (void)doc;
+    }, 20000, msgpack_bytes.size());
+
+    json user_schema = R"({
+        "type": "object",
+        "properties": {
+            "status": {"type": "string"},
+            "code": {"type": "integer"},
+            "users": {"type": "array"}
+        },
+        "required": ["status", "code", "users"]
+    })";
+    senko::schema validator(user_schema);
+
+    benchmark("JSON Schema Validation", [&]() {
+        bool ok = validator.validate(medium_doc);
+        (void)ok;
+    }, 30000, medium_json.size());
+
     std::cout << "\n========================================================================\n";
     return 0;
 }
+

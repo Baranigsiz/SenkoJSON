@@ -20,24 +20,25 @@ HEADERS_ORDER = [
     "patch.hpp",
     "binary/msgpack.hpp",
     "binary/cbor.hpp",
-    "macro.hpp"
+    "macro.hpp",
+    "schema.hpp"
 ]
 
 HEADER_GUARD = """/**
  * SenkoJSON - Single Header Amalgamation
  * https://github.com/Baranigsiz/SenkoJSON
  * 
- * Version: 2.2.0
+ * Version: 2.3.0
  * License: MIT
  * 
- * Lightning-fast, zero-overhead modern C++17/20 JSON library with MessagePack, CBOR & JSONPath.
+ * Lightning-fast, zero-overhead modern C++17/20 JSON library with MessagePack, CBOR, JSONPath & JSON Schema.
  */
 
 #ifndef SENKO_SINGLE_AMALGAMATION_HPP
 #define SENKO_SINGLE_AMALGAMATION_HPP
 
 #define SENKO_VERSION_MAJOR 2
-#define SENKO_VERSION_MINOR 2
+#define SENKO_VERSION_MINOR 3
 #define SENKO_VERSION_PATCH 0
 """
 
@@ -47,6 +48,14 @@ namespace literals {
 
 inline value operator""_json(const char* str, size_t len) {
     return value::parse(std::string_view(str, len));
+}
+
+inline value operator""_json(unsigned long long val) {
+    return value(static_cast<uint64_t>(val));
+}
+
+inline value operator""_json(long double val) {
+    return value(static_cast<double>(val));
 }
 
 inline json_pointer operator""_json_pointer(const char* str, size_t len) {

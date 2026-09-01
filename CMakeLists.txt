@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(SenkoJSON VERSION 2.2.0 LANGUAGES CXX)
+project(SenkoJSON VERSION 2.3.0 LANGUAGES CXX)
 
 # ==============================================================================
 # C++ Standard & Compiler Flags
@@ -54,6 +54,12 @@ if(SENKO_BUILD_EXAMPLES)
 
     add_executable(example_06_json_patch_and_diff examples/06_json_patch_and_diff.cpp)
     target_link_libraries(example_06_json_patch_and_diff PRIVATE senko::senko)
+
+    add_executable(example_07_iterators_and_file_io examples/07_iterators_and_file_io.cpp)
+    target_link_libraries(example_07_iterators_and_file_io PRIVATE senko::senko)
+
+    add_executable(example_08_json_merge_patch examples/08_json_merge_patch.cpp)
+    target_link_libraries(example_08_json_merge_patch PRIVATE senko::senko)
 endif()
 
 # ==============================================================================
@@ -76,6 +82,7 @@ if(SENKO_BUILD_TESTS)
         tests/test_jsonpath.cpp
         tests/test_iterators.cpp
         tests/test_file_io.cpp
+        tests/test_schema.cpp
     )
     target_link_libraries(senko_tests PRIVATE senko::senko)
     target_include_directories(senko_tests PRIVATE tests)
