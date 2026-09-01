@@ -1,7 +1,7 @@
 #include "test_framework.hpp"
-#include <corejson/corejson.hpp>
+#include <senko/senko.hpp>
 
-using json = corejson::json;
+using json = senko::json;
 
 struct Player {
     std::string name;
@@ -9,13 +9,13 @@ struct Player {
     double health;
     bool is_online;
 };
-COREJSON_BIND(Player, name, level, health, is_online)
+SENKO_BIND(Player, name, level, health, is_online)
 
 struct Team {
     std::string team_name;
     int rank;
 };
-COREJSON_BIND(Team, team_name, rank)
+SENKO_BIND(Team, team_name, rank)
 
 TEST_CASE("Struct Binding - Serialization & Deserialization") {
     Player p1{"DragonSlayer", 42, 98.5, true};

@@ -1,7 +1,7 @@
 #include "test_framework.hpp"
-#include <corejson/corejson.hpp>
+#include <senko/senko.hpp>
 
-using json = corejson::json;
+using json = senko::json;
 
 TEST_CASE("Errors - Syntax Errors & Diagnostics") {
     // Empty input

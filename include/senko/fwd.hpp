@@ -9,7 +9,7 @@
 #include <string_view>
 #include <iosfwd>
 
-namespace corejson {
+namespace senko {
 
 // Forward declarations
 class value;
@@ -51,4 +51,7 @@ inline constexpr std::string_view to_string(value_t t) noexcept {
 template <typename T, typename SFINAE = void>
 struct adl_serializer;
 
-} // namespace corejson
+} // namespace senko
+
+// Alias for backwards compatibility
+namespace corejson = senko;

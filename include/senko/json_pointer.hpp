@@ -9,7 +9,7 @@
 #include <vector>
 #include <sstream>
 
-namespace corejson {
+namespace senko {
 
 /**
  * @brief RFC 6901 JSON Pointer implementation.
@@ -160,4 +160,4 @@ inline const value& value::operator[](const json_pointer& ptr) const {
     return ptr.resolve(*this);
 }
 
-} // namespace corejson
+} // namespace senko

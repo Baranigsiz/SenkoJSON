@@ -1,8 +1,8 @@
 #include <iostream>
 #include <vector>
-#include <corejson/corejson.hpp>
+#include <senko/senko.hpp>
 
-using json = corejson::json;
+using json = senko::json;
 
 // Define custom structs
 struct ServerConfig {
@@ -10,24 +10,24 @@ struct ServerConfig {
     int port;
     bool ssl_enabled;
 };
-COREJSON_BIND(ServerConfig, host, port, ssl_enabled)
+SENKO_BIND(ServerConfig, host, port, ssl_enabled)
 
 struct DatabaseConfig {
     std::string engine;
     std::string db_name;
     int max_connections;
 };
-COREJSON_BIND(DatabaseConfig, engine, db_name, max_connections)
+SENKO_BIND(DatabaseConfig, engine, db_name, max_connections)
 
 struct AppConfig {
     std::string app_name;
     ServerConfig server;
     DatabaseConfig database;
 };
-COREJSON_BIND(AppConfig, app_name, server, database)
+SENKO_BIND(AppConfig, app_name, server, database)
 
 int main() {
-    std::cout << "=== CoreJSON v2.0 - Struct Serialization Demo ===\n\n";
+    std::cout << "=== SenkoJSON v2.0 - Struct Serialization Demo ===\n\n";
 
     // 1. Convert C++ Struct to JSON
     AppConfig config{

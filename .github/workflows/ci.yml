@@ -1,4 +1,4 @@
-name: CoreJSON CI
+name: SenkoJSON CI
 
 on:
   push:
@@ -45,9 +45,9 @@ jobs:
       run: >
         cmake -B build
         -DCMAKE_BUILD_TYPE=Release
-        -DCOREJSON_BUILD_TESTS=ON
-        -DCOREJSON_BUILD_BENCHMARKS=ON
-        -DCOREJSON_BUILD_EXAMPLES=ON
+        -DSENKO_BUILD_TESTS=ON
+        -DSENKO_BUILD_BENCHMARKS=ON
+        -DSENKO_BUILD_EXAMPLES=ON
       env:
         CC: ${{ matrix.cc }}
         CXX: ${{ matrix.cxx }}
@@ -56,9 +56,9 @@ jobs:
       if: runner.os == 'Windows'
       run: >
         cmake -B build
-        -DCOREJSON_BUILD_TESTS=ON
-        -DCOREJSON_BUILD_BENCHMARKS=ON
-        -DCOREJSON_BUILD_EXAMPLES=ON
+        -DSENKO_BUILD_TESTS=ON
+        -DSENKO_BUILD_BENCHMARKS=ON
+        -DSENKO_BUILD_EXAMPLES=ON
 
     - name: Build All Targets
       run: cmake --build build --config Release
@@ -69,12 +69,12 @@ jobs:
     - name: Run Benchmarks
       shell: bash
       run: |
-        if [ -f "./build/Release/corejson_benchmarks.exe" ]; then
-          ./build/Release/corejson_benchmarks.exe
-        elif [ -f "./build/corejson_benchmarks.exe" ]; then
-          ./build/corejson_benchmarks.exe
+        if [ -f "./build/Release/senko_benchmarks.exe" ]; then
+          ./build/Release/senko_benchmarks.exe
+        elif [ -f "./build/senko_benchmarks.exe" ]; then
+          ./build/senko_benchmarks.exe
         else
-          ./build/corejson_benchmarks
+          ./build/senko_benchmarks
         fi
 
     - name: Verify Single Header Amalgamation
@@ -82,4 +82,4 @@ jobs:
       run: |
         python scripts/amalgamate.py
         git config core.autocrlf false
-        git diff --ignore-space-at-eol --exit-code single_include/corejson/corejson.hpp || (echo "Single header out of date! Run scripts/amalgamate.py" && exit 1)
+        git diff --ignore-space-at-eol --exit-code single_include/senko/senko.hpp || (echo "Single header out of date! Run scripts/amalgamate.py" && exit 1)

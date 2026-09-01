@@ -1,7 +1,7 @@
 #include "test_framework.hpp"
-#include <corejson/corejson.hpp>
+#include <senko/senko.hpp>
 
-using json = corejson::json;
+using json = senko::json;
 
 TEST_CASE("Containers - Array Operations") {
     json arr = json::array();
@@ -39,7 +39,7 @@ TEST_CASE("Containers - Object Operations") {
     CHECK(obj.is_object());
     CHECK_EQ(obj.size(), 0);
 
-    obj["name"] = "CoreJSON";
+    obj["name"] = "SenkoJSON";
     obj["version"] = 2.0;
     obj["enabled"] = true;
 
@@ -48,9 +48,9 @@ TEST_CASE("Containers - Object Operations") {
     CHECK(obj.contains("version"));
     CHECK(!obj.contains("unknown_key"));
 
-    CHECK_EQ(obj["name"].get<std::string>(), "CoreJSON");
+    CHECK_EQ(obj["name"].get<std::string>(), "SenkoJSON");
     CHECK_EQ(obj.value_or("missing", 999), 999);
-    CHECK_EQ(obj.value_or("name", std::string("default")), "CoreJSON");
+    CHECK_EQ(obj.value_or("name", std::string("default")), "SenkoJSON");
 
     // at() throws on missing
     CHECK_THROWS(obj.at("missing_key"));

@@ -13,7 +13,7 @@
 #include <initializer_list>
 #include <memory>
 
-namespace corejson {
+namespace senko {
 
 class value {
 public:
@@ -517,4 +517,4 @@ struct adl_serializer {
     }
 };
 
-} // namespace corejson
+} // namespace senko

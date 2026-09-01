@@ -3,9 +3,9 @@
 #include <vector>
 #include <iomanip>
 #include <numeric>
-#include <corejson/corejson.hpp>
+#include <senko/senko.hpp>
 
-using json = corejson::json;
+using json = senko::json;
 
 template <typename Func>
 double benchmark(const std::string& name, Func&& func, size_t iterations, size_t data_bytes) {
@@ -36,11 +36,11 @@ double benchmark(const std::string& name, Func&& func, size_t iterations, size_t
 
 int main() {
     std::cout << "========================================================================\n";
-    std::cout << "                   CoreJSON v2.0 Performance Benchmarks                 \n";
+    std::cout << "                   SenkoJSON v2.0 Performance Benchmarks                 \n";
     std::cout << "========================================================================\n";
 
     // 1. Small JSON Payload (REST API response)
-    std::string small_json = R"({"id":12345,"name":"CoreJSON Library","active":true,"rating":4.95,"tags":["c++","json","fast"]})";
+    std::string small_json = R"({"id":12345,"name":"SenkoJSON Library","active":true,"rating":4.95,"tags":["c++","json","fast"]})";
     
     // 2. Medium JSON Payload (Configuration / List of items)
     std::string medium_json = R"({

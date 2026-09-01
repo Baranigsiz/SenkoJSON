@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Amalgamation script for CoreJSON.
-Combines all header files in include/corejson/ into a single standalone header in single_include/corejson/corejson.hpp
+Amalgamation script for SenkoJSON.
+Combines all header files in include/senko/ into a single standalone header in single_include/senko/senko.hpp
 """
 
 import os
@@ -19,25 +19,25 @@ HEADERS_ORDER = [
 ]
 
 HEADER_GUARD = """/**
- * CoreJSON - Single Header Amalgamation
- * https://github.com/Baranigsiz/CoreJSON
+ * SenkoJSON - Single Header Amalgamation
+ * https://github.com/Baranigsiz/SenkoJSON
  * 
  * Version: 2.0.0
  * License: MIT
  * 
- * Modern, high-performance, header-friendly JSON library for C++17/20.
+ * Lightning-fast, zero-overhead modern C++17/20 JSON library.
  */
 
-#ifndef COREJSON_SINGLE_AMALGAMATION_HPP
-#define COREJSON_SINGLE_AMALGAMATION_HPP
+#ifndef SENKO_SINGLE_AMALGAMATION_HPP
+#define SENKO_SINGLE_AMALGAMATION_HPP
 
-#define COREJSON_VERSION_MAJOR 2
-#define COREJSON_VERSION_MINOR 0
-#define COREJSON_VERSION_PATCH 0
+#define SENKO_VERSION_MAJOR 2
+#define SENKO_VERSION_MINOR 0
+#define SENKO_VERSION_PATCH 0
 """
 
 FOOTER = """
-namespace corejson {
+namespace senko {
 namespace literals {
 
 inline value operator""_json(const char* str, size_t len) {
@@ -49,16 +49,16 @@ inline json_pointer operator""_json_pointer(const char* str, size_t len) {
 }
 
 } // namespace literals
-} // namespace corejson
+} // namespace senko
 
-#endif // COREJSON_SINGLE_AMALGAMATION_HPP
+#endif // SENKO_SINGLE_AMALGAMATION_HPP
 """
 
 def amalgamate():
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    include_dir = os.path.join(base_dir, "include", "corejson")
-    output_dir = os.path.join(base_dir, "single_include", "corejson")
-    output_file = os.path.join(output_dir, "corejson.hpp")
+    include_dir = os.path.join(base_dir, "include", "senko")
+    output_dir = os.path.join(base_dir, "single_include", "senko")
+    output_file = os.path.join(output_dir, "senko.hpp")
 
     os.makedirs(output_dir, exist_ok=True)
 

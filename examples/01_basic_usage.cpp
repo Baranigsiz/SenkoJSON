@@ -1,15 +1,15 @@
 #include <iostream>
-#include <corejson/corejson.hpp>
+#include <senko/senko.hpp>
 
-using json = corejson::json;
-using namespace corejson::literals;
+using json = senko::json;
+using namespace senko::literals;
 
 int main() {
-    std::cout << "=== CoreJSON v2.0 - Basic Usage Demo ===\n\n";
+    std::cout << "=== SenkoJSON v2.0 - Basic Usage Demo ===\n\n";
 
     // 1. Parsing from raw string
     std::string_view raw = R"({
-        "project": "CoreJSON",
+        "project": "SenkoJSON",
         "stars": 1250,
         "is_awesome": true,
         "tags": ["c++17", "header-only", "fast"],

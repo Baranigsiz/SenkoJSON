@@ -9,7 +9,7 @@
 #include <istream>
 #include <sstream>
 
-namespace corejson {
+namespace senko {
 
 class parser {
 public:
@@ -180,4 +180,4 @@ inline value value::parse(std::istream& is, bool allow_comments, bool allow_trai
     return parse(str, allow_comments, allow_trailing_comma);
 }
 
-} // namespace corejson
+} // namespace senko

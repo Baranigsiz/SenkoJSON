@@ -111,10 +111,10 @@ inline void log_success() {
     } while (0)
 
 inline int run_all_tests() {
-    std::cout << std::unitbuf; // Enable unbuffered output for live logging
+    std::cout << std::unitbuf;
     auto& tests = get_registry();
     std::cout << "\033[36m====================================================\033[0m\n";
-    std::cout << "\033[36m   CoreJSON Test Suite Running " << tests.size() << " Test Cases   \033[0m\n";
+    std::cout << "\033[36m   SenkoJSON Test Suite Running " << tests.size() << " Test Cases   \033[0m\n";
     std::cout << "\033[36m====================================================\033[0m\n\n" << std::flush;
 
     int test_failures = 0;

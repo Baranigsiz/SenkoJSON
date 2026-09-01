@@ -1,14 +1,14 @@
 <div align="center">
 
-# ⚡ CoreJSON
+# ⚡ SenkoJSON (閃光)
 
-**An Ultra-Fast, Header-Only, Modern C++17/20 JSON Library for High-Performance Applications**
+**A Lightning-Fast, Header-Only, Modern C++17/20 JSON Library for High-Performance Applications**
 
-[![CI Build](https://img.shields.io/badge/build-passing-brightgreen?style=for-the-badge&logo=github-actions)](https://github.com/Baranigsiz/CoreJSON/actions)
+[![CI Build](https://img.shields.io/badge/build-passing-brightgreen?style=for-the-badge&logo=github-actions)](https://github.com/Baranigsiz/SenkoJSON/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![C++17](https://img.shields.io/badge/Standard-C%2B%2B17%20%2F%20C%2B%2B20-blue.svg?style=for-the-badge&logo=c%2B%2B)](https://en.wikipedia.org/wiki/C%2B%2B17)
-[![Header Only](https://img.shields.io/badge/Header--Only-Ready-orange.svg?style=for-the-badge)](https://github.com/Baranigsiz/CoreJSON)
-[![Zero Dependencies](https://img.shields.io/badge/Dependencies-Zero-success.svg?style=for-the-badge)](https://github.com/Baranigsiz/CoreJSON)
+[![Header Only](https://img.shields.io/badge/Header--Only-Ready-orange.svg?style=for-the-badge)](https://github.com/Baranigsiz/SenkoJSON)
+[![Zero Dependencies](https://img.shields.io/badge/Dependencies-Zero-success.svg?style=for-the-badge)](https://github.com/Baranigsiz/SenkoJSON)
 
 <p align="center">
   <a href="#-key-features">Key Features</a> •
@@ -26,19 +26,19 @@
 
 ## 🚀 Overview
 
-**CoreJSON** is a modern C++ library engineered for developers who demand both **high throughput** and **intuitive, expressive syntax**. Built from scratch using modern C++ idioms (`std::variant`, `std::string_view`, `std::from_chars`), CoreJSON delivers million-ops/sec performance with zero external dependencies.
+**SenkoJSON** (*Senkou* / 閃光: Flash of Light / Lightning) is a modern C++ library engineered for developers who demand both **high throughput** and **intuitive, expressive syntax**. Built from scratch using modern C++ idioms (`std::variant`, `std::string_view`, `std::from_chars`), SenkoJSON delivers million-ops/sec performance with zero external dependencies.
 
-Whether you're developing game engines, low-latency microservices, hardware configuration tools, or embedded systems, CoreJSON provides a frictionless developer experience.
+Whether you're developing game engines, low-latency microservices, hardware configuration tools, or embedded systems, SenkoJSON provides a frictionless developer experience.
 
 ---
 
 ## ✨ Key Features
 
 - **⚡ Blazing Fast Single-Pass Parser:** Zero-copy token scanning without intermediate heap allocations. Over **1,000,000 parses/sec**.
-- **📦 Single Header & Modular Delivery:** Use either the modular includes (`#include <corejson/corejson.hpp>`) or drop the single header (`single_include/corejson/corejson.hpp`) into your project.
+- **📦 Single Header & Modular Delivery:** Use either the modular includes (`#include <senko/senko.hpp>`) or drop the single header (`single_include/senko/senko.hpp`) into your project.
 - **🎨 Ergonomic DOM API:** Intuitive access like `doc["user"]["name"] = "Alice"`, custom literals (`""_json`), and streaming operators.
 - **🧠 Memory-Efficient DOM:** Powered by compact `std::variant` tagged unions—no bloated node structures.
-- **🧬 Zero-Boilerplate Struct Reflection:** Serialize and deserialize complex nested C++ structs with a single macro: `COREJSON_BIND(Type, ...)`.
+- **🧬 Zero-Boilerplate Struct Reflection:** Serialize and deserialize complex nested C++ structs with a single macro: `SENKO_BIND(Type, ...)`.
 - **🎯 RFC 6901 JSON Pointer:** Query and mutate deep nested structures with `/store/book/0/author` syntax.
 - **🌐 Full UTF-8 & Surrogate Pairs:** Strict RFC 8259 compliance with UTF-16 surrogate pairs (`\uD83D\uDE00` -> 😀).
 - **🛠️ Permissive Config Mode:** Optional support for C/C++ style comments (`//`, `/* */`) and trailing commas for configuration files.
@@ -66,15 +66,15 @@ Whether you're developing game engines, low-latency microservices, hardware conf
 
 ```cpp
 #include <iostream>
-#include <corejson/corejson.hpp>
+#include <senko/senko.hpp>
 
-using json = corejson::json;
-using namespace corejson::literals;
+using json = senko::json;
+using namespace senko::literals;
 
 int main() {
     // Parse from string or literal
     json data = R"({
-        "project": "CoreJSON",
+        "project": "SenkoJSON",
         "stars": 1250,
         "is_fast": true,
         "tags": ["c++17", "header-only"]
@@ -104,26 +104,26 @@ int main() {
 
 ## 🧬 Struct Reflection & Serialization
 
-CoreJSON makes binding C++ structures to JSON effortless:
+SenkoJSON makes binding C++ structures to JSON effortless:
 
 ```cpp
 #include <iostream>
-#include <corejson/corejson.hpp>
+#include <senko/senko.hpp>
 
-using json = corejson::json;
+using json = senko::json;
 
 struct ServerConfig {
     std::string host;
     int port;
     bool ssl;
 };
-COREJSON_BIND(ServerConfig, host, port, ssl)
+SENKO_BIND(ServerConfig, host, port, ssl)
 
 struct AppConfig {
     std::string app_name;
     ServerConfig server;
 };
-COREJSON_BIND(AppConfig, app_name, server)
+SENKO_BIND(AppConfig, app_name, server)
 
 int main() {
     // 1. C++ Struct -> JSON
@@ -147,8 +147,8 @@ int main() {
 Effortlessly query deep structures:
 
 ```cpp
-#include <corejson/corejson.hpp>
-using namespace corejson::literals;
+#include <senko/senko.hpp>
+using namespace senko::literals;
 
 json doc = json::parse(R"({
     "store": {
@@ -177,22 +177,22 @@ Add this to your `CMakeLists.txt`:
 include(FetchContent)
 
 FetchContent_Declare(
-    CoreJSON
+    SenkoJSON
     GIT_REPOSITORY https://github.com/Baranigsiz/CoreJSON.git
     GIT_TAG        v2.0.0
 )
-FetchContent_MakeAvailable(CoreJSON)
+FetchContent_MakeAvailable(SenkoJSON)
 
-target_link_libraries(my_project PRIVATE corejson::corejson)
+target_link_libraries(my_project PRIVATE senko::senko)
 ```
 
 ### Method 2: Single Header Drop-In
 
-Simply copy [`single_include/corejson/corejson.hpp`](single_include/corejson/corejson.hpp) into your project's include folder and include it:
+Simply copy [`single_include/senko/senko.hpp`](single_include/senko/senko.hpp) into your project's include folder and include it:
 
 ```cpp
-#include "corejson.hpp"
-using json = corejson::json;
+#include "senko.hpp"
+using json = senko::json;
 ```
 
 ---
@@ -200,9 +200,9 @@ using json = corejson::json;
 ## 📂 Project Structure
 
 ```text
-CoreJSON/
+SenkoJSON/
 ├── .github/workflows/ci.yml       # Multi-platform CI (Ubuntu, Windows, macOS)
-├── include/corejson/              # Modular headers
+├── include/senko/                 # Modular headers
 │   ├── fwd.hpp                    # Type traits & forward declarations
 │   ├── error.hpp                  # Rich diagnostic exceptions
 │   ├── value.hpp                  # Compact std::variant DOM
@@ -211,9 +211,9 @@ CoreJSON/
 │   ├── serializer.hpp             # High-speed stringifier with RFC 8259 escaping
 │   ├── json_pointer.hpp           # RFC 6901 JSON Pointer implementation
 │   ├── macro.hpp                  # Struct reflection macros
-│   └── corejson.hpp               # Master header
-├── single_include/corejson/       # Standalone single-header distribution
-│   └── corejson.hpp
+│   └── senko.hpp                  # Master header
+├── single_include/senko/          # Standalone single-header distribution
+│   └── senko.hpp
 ├── examples/                      # Interactive code examples
 ├── tests/                         # Comprehensive unit test suite
 ├── benchmarks/                    # Latency & throughput benchmark suite
@@ -231,12 +231,12 @@ CoreJSON/
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 
 # Build and run unit tests
-cmake --build build --target corejson_tests
+cmake --build build --target senko_tests
 ctest --test-dir build --output-on-failure
 
 # Run benchmarks
-cmake --build build --target corejson_benchmarks
-./build/corejson_benchmarks
+cmake --build build --target senko_benchmarks
+./build/senko_benchmarks
 ```
 
 ---

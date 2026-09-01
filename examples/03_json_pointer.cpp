@@ -1,11 +1,11 @@
 #include <iostream>
-#include <corejson/corejson.hpp>
+#include <senko/senko.hpp>
 
-using json = corejson::json;
-using namespace corejson::literals;
+using json = senko::json;
+using namespace senko::literals;
 
 int main() {
-    std::cout << "=== CoreJSON v2.0 - RFC 6901 JSON Pointer Demo ===\n\n";
+    std::cout << "=== SenkoJSON v2.0 - RFC 6901 JSON Pointer Demo ===\n\n";
 
     json doc = R"({
         "store": {

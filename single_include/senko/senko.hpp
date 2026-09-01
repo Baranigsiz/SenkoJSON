@@ -1,19 +1,19 @@
 /**
- * CoreJSON - Single Header Amalgamation
- * https://github.com/Baranigsiz/CoreJSON
+ * SenkoJSON - Single Header Amalgamation
+ * https://github.com/Baranigsiz/SenkoJSON
  * 
  * Version: 2.0.0
  * License: MIT
  * 
- * Modern, high-performance, header-friendly JSON library for C++17/20.
+ * Lightning-fast, zero-overhead modern C++17/20 JSON library.
  */
 
-#ifndef COREJSON_SINGLE_AMALGAMATION_HPP
-#define COREJSON_SINGLE_AMALGAMATION_HPP
+#ifndef SENKO_SINGLE_AMALGAMATION_HPP
+#define SENKO_SINGLE_AMALGAMATION_HPP
 
-#define COREJSON_VERSION_MAJOR 2
-#define COREJSON_VERSION_MINOR 0
-#define COREJSON_VERSION_PATCH 0
+#define SENKO_VERSION_MAJOR 2
+#define SENKO_VERSION_MINOR 0
+#define SENKO_VERSION_PATCH 0
 
 
 // ========================================================
@@ -31,7 +31,7 @@
 #include <string_view>
 #include <iosfwd>
 
-namespace corejson {
+namespace senko {
 
 // Forward declarations
 class value;
@@ -73,7 +73,10 @@ inline constexpr std::string_view to_string(value_t t) noexcept {
 template <typename T, typename SFINAE = void>
 struct adl_serializer;
 
-} // namespace corejson
+} // namespace senko
+
+// Alias for backwards compatibility
+namespace corejson = senko;
 
 
 // ========================================================
@@ -88,10 +91,10 @@ struct adl_serializer;
 #include <string_view>
 #include <algorithm>
 
-namespace corejson {
+namespace senko {
 
 /**
- * @brief Base exception class for all CoreJSON errors.
+ * @brief Base exception class for all Senko errors.
  */
 class exception : public std::exception {
 public:
@@ -121,7 +124,7 @@ private:
 
     static std::string format_message(std::string_view raw_msg, size_t line, size_t col, size_t offset, std::string_view snippet) {
         std::ostringstream ss;
-        ss << "[corejson::parse_error] " << raw_msg
+        ss << "[senko::parse_error] " << raw_msg
            << " (line " << line << ", column " << col << ", offset " << offset << ")";
         if (!snippet.empty()) {
             ss << "\n    --> " << snippet;
@@ -137,7 +140,7 @@ private:
 class type_error : public exception {
 public:
     explicit type_error(std::string message)
-        : exception("[corejson::type_error] " + std::move(message)) {}
+        : exception("[senko::type_error] " + std::move(message)) {}
 };
 
 /**
@@ -146,7 +149,7 @@ public:
 class out_of_range : public exception {
 public:
     explicit out_of_range(std::string message)
-        : exception("[corejson::out_of_range] " + std::move(message)) {}
+        : exception("[senko::out_of_range] " + std::move(message)) {}
 };
 
 /**
@@ -155,10 +158,10 @@ public:
 class pointer_error : public exception {
 public:
     explicit pointer_error(std::string message)
-        : exception("[corejson::pointer_error] " + std::move(message)) {}
+        : exception("[senko::pointer_error] " + std::move(message)) {}
 };
 
-} // namespace corejson
+} // namespace senko
 
 
 // ========================================================
@@ -180,7 +183,7 @@ public:
 #include <initializer_list>
 #include <memory>
 
-namespace corejson {
+namespace senko {
 
 class value {
 public:
@@ -684,7 +687,7 @@ struct adl_serializer {
     }
 };
 
-} // namespace corejson
+} // namespace senko
 
 
 // ========================================================
@@ -703,8 +706,9 @@ struct adl_serializer {
 #include <cctype>
 #include <charconv>
 #include <sstream>
+#include <limits>
 
-namespace corejson {
+namespace senko {
 
 enum class token_type : uint8_t {
     end_of_input = 0,
@@ -952,7 +956,7 @@ public:
             uint64_t uval = 0;
             auto [ptr, ec] = std::from_chars(num_str.data(), num_str.data() + num_str.size(), uval);
             if (ec == std::errc()) {
-                if (uval <= static_cast<uint64_t>(INT64_MAX)) {
+                if (uval <= static_cast<uint64_t>((std::numeric_limits<int64_t>::max)())) {
                     return value(static_cast<int64_t>(uval));
                 }
                 return value(uval);
@@ -1018,7 +1022,7 @@ private:
     }
 };
 
-} // namespace corejson
+} // namespace senko
 
 
 // ========================================================
@@ -1036,7 +1040,7 @@ private:
 #include <istream>
 #include <sstream>
 
-namespace corejson {
+namespace senko {
 
 class parser {
 public:
@@ -1207,7 +1211,7 @@ inline value value::parse(std::istream& is, bool allow_comments, bool allow_trai
     return parse(str, allow_comments, allow_trailing_comma);
 }
 
-} // namespace corejson
+} // namespace senko
 
 
 // ========================================================
@@ -1225,7 +1229,7 @@ inline value value::parse(std::istream& is, bool allow_comments, bool allow_trai
 #include <cmath>
 #include <limits>
 
-namespace corejson {
+namespace senko {
 
 class serializer {
 public:
@@ -1382,7 +1386,7 @@ inline std::ostream& operator<<(std::ostream& os, const value& j) {
     return os;
 }
 
-} // namespace corejson
+} // namespace senko
 
 
 // ========================================================
@@ -1400,7 +1404,7 @@ inline std::ostream& operator<<(std::ostream& os, const value& j) {
 #include <vector>
 #include <sstream>
 
-namespace corejson {
+namespace senko {
 
 /**
  * @brief RFC 6901 JSON Pointer implementation.
@@ -1551,7 +1555,7 @@ inline const value& value::operator[](const json_pointer& ptr) const {
     return ptr.resolve(*this);
 }
 
-} // namespace corejson
+} // namespace senko
 
 
 // ========================================================
@@ -1563,53 +1567,53 @@ inline const value& value::operator[](const json_pointer& ptr) const {
 
 
 
-namespace corejson {
+namespace senko {
 
 // Helper macros for automatic to_json / from_json struct binding
-#define COREJSON_TO_JSON(v, key) j[#key] = v.key;
-#define COREJSON_FROM_JSON(v, key) if (j.contains(#key)) { j.at(#key).get_to(v.key); }
+#define SENKO_TO_JSON(v, key) j[#key] = v.key;
+#define SENKO_FROM_JSON(v, key) if (j.contains(#key)) { j.at(#key).get_to(v.key); }
 
 // Preprocessor counting and dispatch
-#define COREJSON_ARG_N( \
+#define SENKO_ARG_N( \
     _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, \
     _11, _12, _13, _14, _15, _16, _17, _18, _19, _20, \
     _21, _22, _23, _24, _25, _26, _27, _28, _29, _30, \
     _31, _32, N, ...) N
 
-#define COREJSON_RSEQ_N() \
+#define SENKO_RSEQ_N() \
     32, 31, 30, 29, 28, 27, 26, 25, 24, 23, \
     22, 21, 20, 19, 18, 17, 16, 15, 14, 13, \
     12, 11, 10, 9, 8, 7, 6, 5, 4, 3, \
     2, 1, 0
 
-#define COREJSON_NARGS_(...) COREJSON_EXPAND(COREJSON_ARG_N(__VA_ARGS__))
-#define COREJSON_NARGS(...) COREJSON_NARGS_(__VA_ARGS__, COREJSON_RSEQ_N())
-#define COREJSON_EXPAND(x) x
-#define COREJSON_CONCAT(x, y) COREJSON_CONCAT_(x, y)
-#define COREJSON_CONCAT_(x, y) x##y
+#define SENKO_NARGS_(...) SENKO_EXPAND(SENKO_ARG_N(__VA_ARGS__))
+#define SENKO_NARGS(...) SENKO_NARGS_(__VA_ARGS__, SENKO_RSEQ_N())
+#define SENKO_EXPAND(x) x
+#define SENKO_CONCAT(x, y) SENKO_CONCAT_(x, y)
+#define SENKO_CONCAT_(x, y) x##y
 
 // Per-count macro expansions
-#define COREJSON_TO_1(v, a) COREJSON_TO_JSON(v, a)
-#define COREJSON_TO_2(v, a, b) COREJSON_TO_1(v, a) COREJSON_TO_JSON(v, b)
-#define COREJSON_TO_3(v, a, b, c) COREJSON_TO_2(v, a, b) COREJSON_TO_JSON(v, c)
-#define COREJSON_TO_4(v, a, b, c, d) COREJSON_TO_3(v, a, b, c) COREJSON_TO_JSON(v, d)
-#define COREJSON_TO_5(v, a, b, c, d, e) COREJSON_TO_4(v, a, b, c, d) COREJSON_TO_JSON(v, e)
-#define COREJSON_TO_6(v, a, b, c, d, e, f) COREJSON_TO_5(v, a, b, c, d, e) COREJSON_TO_JSON(v, f)
-#define COREJSON_TO_7(v, a, b, c, d, e, f, g) COREJSON_TO_6(v, a, b, c, d, e, f) COREJSON_TO_JSON(v, g)
-#define COREJSON_TO_8(v, a, b, c, d, e, f, g, h) COREJSON_TO_7(v, a, b, c, d, e, f, g) COREJSON_TO_JSON(v, h)
-#define COREJSON_TO_9(v, a, b, c, d, e, f, g, h, i) COREJSON_TO_8(v, a, b, c, d, e, f, g, h) COREJSON_TO_JSON(v, i)
-#define COREJSON_TO_10(v, a, b, c, d, e, f, g, h, i, j) COREJSON_TO_9(v, a, b, c, d, e, f, g, h, i) COREJSON_TO_JSON(v, j)
+#define SENKO_TO_1(v, a) SENKO_TO_JSON(v, a)
+#define SENKO_TO_2(v, a, b) SENKO_TO_1(v, a) SENKO_TO_JSON(v, b)
+#define SENKO_TO_3(v, a, b, c) SENKO_TO_2(v, a, b) SENKO_TO_JSON(v, c)
+#define SENKO_TO_4(v, a, b, c, d) SENKO_TO_3(v, a, b, c) SENKO_TO_JSON(v, d)
+#define SENKO_TO_5(v, a, b, c, d, e) SENKO_TO_4(v, a, b, c, d) SENKO_TO_JSON(v, e)
+#define SENKO_TO_6(v, a, b, c, d, e, f) SENKO_TO_5(v, a, b, c, d, e) SENKO_TO_JSON(v, f)
+#define SENKO_TO_7(v, a, b, c, d, e, f, g) SENKO_TO_6(v, a, b, c, d, e, f) SENKO_TO_JSON(v, g)
+#define SENKO_TO_8(v, a, b, c, d, e, f, g, h) SENKO_TO_7(v, a, b, c, d, e, f, g) SENKO_TO_JSON(v, h)
+#define SENKO_TO_9(v, a, b, c, d, e, f, g, h, i) SENKO_TO_8(v, a, b, c, d, e, f, g, h) SENKO_TO_JSON(v, i)
+#define SENKO_TO_10(v, a, b, c, d, e, f, g, h, i, j) SENKO_TO_9(v, a, b, c, d, e, f, g, h, i) SENKO_TO_JSON(v, j)
 
-#define COREJSON_FROM_1(v, a) COREJSON_FROM_JSON(v, a)
-#define COREJSON_FROM_2(v, a, b) COREJSON_FROM_1(v, a) COREJSON_FROM_JSON(v, b)
-#define COREJSON_FROM_3(v, a, b, c) COREJSON_FROM_2(v, a, b) COREJSON_FROM_JSON(v, c)
-#define COREJSON_FROM_4(v, a, b, c, d) COREJSON_FROM_3(v, a, b, c) COREJSON_FROM_JSON(v, d)
-#define COREJSON_FROM_5(v, a, b, c, d, e) COREJSON_FROM_4(v, a, b, c, d, e) COREJSON_FROM_JSON(v, e)
-#define COREJSON_FROM_6(v, a, b, c, d, e, f) COREJSON_FROM_5(v, a, b, c, d, e, f) COREJSON_FROM_JSON(v, f)
-#define COREJSON_FROM_7(v, a, b, c, d, e, f, g) COREJSON_FROM_6(v, a, b, c, d, e, f, g) COREJSON_FROM_JSON(v, g)
-#define COREJSON_FROM_8(v, a, b, c, d, e, f, g, h) COREJSON_FROM_7(v, a, b, c, d, e, f, g) COREJSON_FROM_JSON(v, h)
-#define COREJSON_FROM_9(v, a, b, c, d, e, f, g, h, i) COREJSON_FROM_8(v, a, b, c, d, e, f, g, h) COREJSON_FROM_JSON(v, i)
-#define COREJSON_FROM_10(v, a, b, c, d, e, f, g, h, i, j) COREJSON_FROM_9(v, a, b, c, d, e, f, g, h, i) COREJSON_FROM_JSON(v, j)
+#define SENKO_FROM_1(v, a) SENKO_FROM_JSON(v, a)
+#define SENKO_FROM_2(v, a, b) SENKO_FROM_1(v, a) SENKO_FROM_JSON(v, b)
+#define SENKO_FROM_3(v, a, b, c) SENKO_FROM_2(v, a, b) SENKO_FROM_JSON(v, c)
+#define SENKO_FROM_4(v, a, b, c, d) SENKO_FROM_3(v, a, b, c) SENKO_FROM_JSON(v, d)
+#define SENKO_FROM_5(v, a, b, c, d, e) SENKO_FROM_4(v, a, b, c, d, e) SENKO_FROM_JSON(v, e)
+#define SENKO_FROM_6(v, a, b, c, d, e, f) SENKO_FROM_5(v, a, b, c, d, e, f) SENKO_FROM_JSON(v, f)
+#define SENKO_FROM_7(v, a, b, c, d, e, f, g) SENKO_FROM_6(v, a, b, c, d, e, f, g) SENKO_FROM_JSON(v, g)
+#define SENKO_FROM_8(v, a, b, c, d, e, f, g, h) SENKO_FROM_7(v, a, b, c, d, e, f, g) SENKO_FROM_JSON(v, h)
+#define SENKO_FROM_9(v, a, b, c, d, e, f, g, h, i) SENKO_FROM_8(v, a, b, c, d, e, f, g, h, i) SENKO_FROM_JSON(v, i)
+#define SENKO_FROM_10(v, a, b, c, d, e, f, g, h, i, j) SENKO_FROM_9(v, a, b, c, d, e, f, g, h, i) SENKO_FROM_JSON(v, j)
 
 /**
  * @brief Macro to define struct/class serialization & deserialization functions.
@@ -1618,24 +1622,26 @@ namespace corejson {
  *     std::string name;
  *     int age;
  * };
- * COREJSON_BIND(User, name, age)
+ * SENKO_BIND(User, name, age)
  */
-#define COREJSON_BIND(Type, ...) \
-    inline void to_json(::corejson::value& j, const Type& v) { \
-        j = ::corejson::value::object(); \
-        COREJSON_EXPAND(COREJSON_CONCAT(COREJSON_TO_, COREJSON_NARGS(__VA_ARGS__))(v, __VA_ARGS__)) \
+#define SENKO_BIND(Type, ...) \
+    inline void to_json(::senko::value& j, const Type& v) { \
+        j = ::senko::value::object(); \
+        SENKO_EXPAND(SENKO_CONCAT(SENKO_TO_, SENKO_NARGS(__VA_ARGS__))(v, __VA_ARGS__)) \
     } \
-    inline void from_json(const ::corejson::value& j, Type& v) { \
-        COREJSON_EXPAND(COREJSON_CONCAT(COREJSON_FROM_, COREJSON_NARGS(__VA_ARGS__))(v, __VA_ARGS__)) \
+    inline void from_json(const ::senko::value& j, Type& v) { \
+        SENKO_EXPAND(SENKO_CONCAT(SENKO_FROM_, SENKO_NARGS(__VA_ARGS__))(v, __VA_ARGS__)) \
     }
 
-// Alias for flexibility
-#define COREJSON_DEFINE_TYPE(Type, ...) COREJSON_BIND(Type, __VA_ARGS__)
+// Aliases for convenience & backwards compatibility
+#define SENKO_DEFINE_TYPE(Type, ...) SENKO_BIND(Type, __VA_ARGS__)
+#define COREJSON_BIND(Type, ...) SENKO_BIND(Type, __VA_ARGS__)
+#define COREJSON_DEFINE_TYPE(Type, ...) SENKO_BIND(Type, __VA_ARGS__)
 
-} // namespace corejson
+} // namespace senko
 
 
-namespace corejson {
+namespace senko {
 namespace literals {
 
 inline value operator""_json(const char* str, size_t len) {
@@ -1647,6 +1653,6 @@ inline json_pointer operator""_json_pointer(const char* str, size_t len) {
 }
 
 } // namespace literals
-} // namespace corejson
+} // namespace senko
 
-#endif // COREJSON_SINGLE_AMALGAMATION_HPP
+#endif // SENKO_SINGLE_AMALGAMATION_HPP

@@ -9,7 +9,7 @@
 #include <cmath>
 #include <limits>
 
-namespace corejson {
+namespace senko {
 
 class serializer {
 public:
@@ -166,4 +166,4 @@ inline std::ostream& operator<<(std::ostream& os, const value& j) {
     return os;
 }
 
-} // namespace corejson
+} // namespace senko

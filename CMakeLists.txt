@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(CoreJSON VERSION 2.0.0 LANGUAGES CXX)
+project(SenkoJSON VERSION 2.0.0 LANGUAGES CXX)
 
 # ==============================================================================
 # C++ Standard & Compiler Flags
@@ -9,50 +9,51 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Option to build tests and examples
-option(COREJSON_BUILD_TESTS "Build CoreJSON unit tests" ON)
-option(COREJSON_BUILD_BENCHMARKS "Build CoreJSON benchmarks" ON)
-option(COREJSON_BUILD_EXAMPLES "Build CoreJSON examples" ON)
+option(SENKO_BUILD_TESTS "Build SenkoJSON unit tests" ON)
+option(SENKO_BUILD_BENCHMARKS "Build SenkoJSON benchmarks" ON)
+option(SENKO_BUILD_EXAMPLES "Build SenkoJSON examples" ON)
 
 # ==============================================================================
 # Core Library Target (Header-Only Interface)
 # ==============================================================================
-add_library(corejson INTERFACE)
-add_library(corejson::corejson ALIAS corejson)
+add_library(senko INTERFACE)
+add_library(senko::senko ALIAS senko)
+add_library(SenkoJSON::SenkoJSON ALIAS senko)
 
-target_include_directories(corejson INTERFACE
+target_include_directories(senko INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
 
-target_compile_features(corejson INTERFACE cxx_std_17)
+target_compile_features(senko INTERFACE cxx_std_17)
 
 # ==============================================================================
 # Main Application
 # ==============================================================================
-add_executable(corejson_app src/main.cpp)
-target_link_libraries(corejson_app PRIVATE corejson::corejson)
+add_executable(senko_app src/main.cpp)
+target_link_libraries(senko_app PRIVATE senko::senko)
 
 # ==============================================================================
 # Examples
 # ==============================================================================
-if(COREJSON_BUILD_EXAMPLES)
+if(SENKO_BUILD_EXAMPLES)
     add_executable(example_01_basic_usage examples/01_basic_usage.cpp)
-    target_link_libraries(example_01_basic_usage PRIVATE corejson::corejson)
+    target_link_libraries(example_01_basic_usage PRIVATE senko::senko)
 
     add_executable(example_02_struct_serialization examples/02_struct_serialization.cpp)
-    target_link_libraries(example_02_struct_serialization PRIVATE corejson::corejson)
+    target_link_libraries(example_02_struct_serialization PRIVATE senko::senko)
 
     add_executable(example_03_json_pointer examples/03_json_pointer.cpp)
-    target_link_libraries(example_03_json_pointer PRIVATE corejson::corejson)
+    target_link_libraries(example_03_json_pointer PRIVATE senko::senko)
 endif()
 
 # ==============================================================================
 # Tests
 # ==============================================================================
-if(COREJSON_BUILD_TESTS)
+if(SENKO_BUILD_TESTS)
     enable_testing()
 
-    add_executable(corejson_tests
+    add_executable(senko_tests
         tests/test_main.cpp
         tests/test_primitives.cpp
         tests/test_objects_arrays.cpp
@@ -61,18 +62,18 @@ if(COREJSON_BUILD_TESTS)
         tests/test_json_pointer.cpp
         tests/test_struct_binding.cpp
     )
-    target_link_libraries(corejson_tests PRIVATE corejson::corejson)
-    target_include_directories(corejson_tests PRIVATE tests)
+    target_link_libraries(senko_tests PRIVATE senko::senko)
+    target_include_directories(senko_tests PRIVATE tests)
 
-    add_test(NAME CoreJSON_UnitTests COMMAND corejson_tests)
+    add_test(NAME SenkoJSON_UnitTests COMMAND senko_tests)
 endif()
 
 # ==============================================================================
 # Benchmarks
 # ==============================================================================
-if(COREJSON_BUILD_BENCHMARKS)
-    add_executable(corejson_benchmarks benchmarks/benchmark_suite.cpp)
-    target_link_libraries(corejson_benchmarks PRIVATE corejson::corejson)
+if(SENKO_BUILD_BENCHMARKS)
+    add_executable(senko_benchmarks benchmarks/benchmark_suite.cpp)
+    target_link_libraries(senko_benchmarks PRIVATE senko::senko)
 endif()
 
 # ==============================================================================
@@ -81,34 +82,34 @@ endif()
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
-install(TARGETS corejson
-    EXPORT CoreJSONTargets
+install(TARGETS senko
+    EXPORT SenkoJSONTargets
     INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
-install(DIRECTORY include/corejson DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-install(DIRECTORY single_include/corejson DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/single_include OPTIONAL)
+install(DIRECTORY include/senko DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(DIRECTORY single_include/senko DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/single_include OPTIONAL)
 
-install(EXPORT CoreJSONTargets
-    FILE CoreJSONTargets.cmake
-    NAMESPACE corejson::
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/CoreJSON
+install(EXPORT SenkoJSONTargets
+    FILE SenkoJSONTargets.cmake
+    NAMESPACE senko::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/SenkoJSON
 )
 
 configure_package_config_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CoreJSONConfig.cmake.in
-    ${CMAKE_CURRENT_BINARY_DIR}/CoreJSONConfig.cmake
-    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/CoreJSON
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/SenkoJSONConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/SenkoJSONConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/SenkoJSON
 )
 
 write_basic_package_version_file(
-    ${CMAKE_CURRENT_BINARY_DIR}/CoreJSONConfigVersion.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/SenkoJSONConfigVersion.cmake
     VERSION ${PROJECT_VERSION}
     COMPATIBILITY SameMajorVersion
 )
 
 install(FILES
-    ${CMAKE_CURRENT_BINARY_DIR}/CoreJSONConfig.cmake
-    ${CMAKE_CURRENT_BINARY_DIR}/CoreJSONConfigVersion.cmake
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/CoreJSON
+    ${CMAKE_CURRENT_BINARY_DIR}/SenkoJSONConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/SenkoJSONConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/SenkoJSON
 )

@@ -10,8 +10,9 @@
 #include <cctype>
 #include <charconv>
 #include <sstream>
+#include <limits>
 
-namespace corejson {
+namespace senko {
 
 enum class token_type : uint8_t {
     end_of_input = 0,
@@ -259,7 +260,7 @@ public:
             uint64_t uval = 0;
             auto [ptr, ec] = std::from_chars(num_str.data(), num_str.data() + num_str.size(), uval);
             if (ec == std::errc()) {
-                if (uval <= static_cast<uint64_t>(INT64_MAX)) {
+                if (uval <= static_cast<uint64_t>((std::numeric_limits<int64_t>::max)())) {
                     return value(static_cast<int64_t>(uval));
                 }
                 return value(uval);
@@ -325,4 +326,4 @@ private:
     }
 };
 
-} // namespace corejson
+} // namespace senko

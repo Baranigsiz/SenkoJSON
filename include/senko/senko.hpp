@@ -1,15 +1,15 @@
 #pragma once
 
 /**
- * @file corejson.hpp
- * @brief Master header for CoreJSON - A modern, high-performance, header-friendly C++ JSON library.
+ * @file senko.hpp
+ * @brief Master header for SenkoJSON - A lightning-fast, modern, header-only C++ JSON library.
  * @version 2.0.0
  * @license MIT
  */
 
-#define COREJSON_VERSION_MAJOR 2
-#define COREJSON_VERSION_MINOR 0
-#define COREJSON_VERSION_PATCH 0
+#define SENKO_VERSION_MAJOR 2
+#define SENKO_VERSION_MINOR 0
+#define SENKO_VERSION_PATCH 0
 
 #include "fwd.hpp"
 #include "error.hpp"
@@ -20,7 +20,7 @@
 #include "json_pointer.hpp"
 #include "macro.hpp"
 
-namespace corejson {
+namespace senko {
 
 namespace literals {
 
@@ -42,4 +42,4 @@ inline json_pointer operator""_json_pointer(const char* str, size_t len) {
 
 } // namespace literals
 
-} // namespace corejson
+} // namespace senko

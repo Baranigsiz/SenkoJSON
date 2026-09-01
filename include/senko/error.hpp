@@ -6,10 +6,10 @@
 #include <string_view>
 #include <algorithm>
 
-namespace corejson {
+namespace senko {
 
 /**
- * @brief Base exception class for all CoreJSON errors.
+ * @brief Base exception class for all Senko errors.
  */
 class exception : public std::exception {
 public:
@@ -39,7 +39,7 @@ private:
 
     static std::string format_message(std::string_view raw_msg, size_t line, size_t col, size_t offset, std::string_view snippet) {
         std::ostringstream ss;
-        ss << "[corejson::parse_error] " << raw_msg
+        ss << "[senko::parse_error] " << raw_msg
            << " (line " << line << ", column " << col << ", offset " << offset << ")";
         if (!snippet.empty()) {
             ss << "\n    --> " << snippet;
@@ -55,7 +55,7 @@ private:
 class type_error : public exception {
 public:
     explicit type_error(std::string message)
-        : exception("[corejson::type_error] " + std::move(message)) {}
+        : exception("[senko::type_error] " + std::move(message)) {}
 };
 
 /**
@@ -64,7 +64,7 @@ public:
 class out_of_range : public exception {
 public:
     explicit out_of_range(std::string message)
-        : exception("[corejson::out_of_range] " + std::move(message)) {}
+        : exception("[senko::out_of_range] " + std::move(message)) {}
 };
 
 /**
@@ -73,7 +73,7 @@ public:
 class pointer_error : public exception {
 public:
     explicit pointer_error(std::string message)
-        : exception("[corejson::pointer_error] " + std::move(message)) {}
+        : exception("[senko::pointer_error] " + std::move(message)) {}
 };
 
-} // namespace corejson
+} // namespace senko

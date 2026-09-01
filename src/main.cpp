@@ -1,16 +1,16 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
-#include <corejson/corejson.hpp>
+#include <senko/senko.hpp>
 
-using json = corejson::json;
+using json = senko::json;
 
 int main() {
     std::string inputFile = "apex_config.json";
     std::string outputFile = "optimized_config.json";
 
     std::cout << "====================================================\n";
-    std::cout << "         CoreJSON v2.0 - Configuration Optimizer    \n";
+    std::cout << "         SenkoJSON v2.0 - Config Optimizer          \n";
     std::cout << "====================================================\n\n";
 
     // 1. Read input configuration
@@ -39,7 +39,7 @@ int main() {
 
     try {
         // 2. Parse directly with json::parse
-        std::cout << "[INFO] Parsing configuration with CoreJSON v2.0...\n";
+        std::cout << "[INFO] Parsing configuration with SenkoJSON v2.0...\n";
         json root = json::parse(fileIn);
         fileIn.close();
 

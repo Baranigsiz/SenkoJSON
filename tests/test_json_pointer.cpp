@@ -1,8 +1,8 @@
 #include "test_framework.hpp"
-#include <corejson/corejson.hpp>
+#include <senko/senko.hpp>
 
-using json = corejson::json;
-using namespace corejson::literals;
+using json = senko::json;
+using namespace senko::literals;
 
 TEST_CASE("JSON Pointer - RFC 6901 Specification Tests") {
     // Official RFC 6901 Example Document
