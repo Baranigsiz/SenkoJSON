@@ -8,38 +8,40 @@ on:
 
 jobs:
   build-and-test:
-    name: ${{ matrix.os }} (${{ matrix.cxx }})
+    name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - name: "Ubuntu (GCC 12)"
+            os: ubuntu-latest
+            cc: gcc-12
             cxx: g++-12
-            c_compiler: gcc-12
-            cxx_compiler: g++-12
-          - os: ubuntu-latest
+          - name: "Ubuntu (Clang 16)"
+            os: ubuntu-latest
+            cc: clang-16
             cxx: clang++-16
-            c_compiler: clang-16
-            cxx_compiler: clang++-16
-          - os: windows-latest
-            cxx: msvc
-            c_compiler: cl
-            cxx_compiler: cl
-          - os: macos-latest
-            cxx: apple-clang
-            c_compiler: clang
-            cxx_compiler: clang++
+          - name: "macOS (Apple Clang)"
+            os: macos-latest
+            cc: clang
+            cxx: clang++
+          - name: "Windows (MSVC 2022)"
+            os: windows-latest
+            cc: ""
+            cxx: ""
 
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
 
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
 
-    - name: Configure CMake
+    - name: Configure CMake (Linux / macOS)
+      if: runner.os != 'Windows'
       run: >
         cmake -B build
         -DCMAKE_BUILD_TYPE=Release
@@ -47,8 +49,16 @@ jobs:
         -DCOREJSON_BUILD_BENCHMARKS=ON
         -DCOREJSON_BUILD_EXAMPLES=ON
       env:
-        CC: ${{ matrix.c_compiler }}
-        CXX: ${{ matrix.cxx_compiler }}
+        CC: ${{ matrix.cc }}
+        CXX: ${{ matrix.cxx }}
+
+    - name: Configure CMake (Windows MSVC)
+      if: runner.os == 'Windows'
+      run: >
+        cmake -B build
+        -DCOREJSON_BUILD_TESTS=ON
+        -DCOREJSON_BUILD_BENCHMARKS=ON
+        -DCOREJSON_BUILD_EXAMPLES=ON
 
     - name: Build All Targets
       run: cmake --build build --config Release
@@ -57,16 +67,19 @@ jobs:
       run: ctest --test-dir build --output-on-failure -C Release
 
     - name: Run Benchmarks
+      shell: bash
       run: |
-        if [ "${{ runner.os }}" = "Windows" ]; then
-          ./build/Release/corejson_benchmarks.exe || ./build/corejson_benchmarks.exe
+        if [ -f "./build/Release/corejson_benchmarks.exe" ]; then
+          ./build/Release/corejson_benchmarks.exe
+        elif [ -f "./build/corejson_benchmarks.exe" ]; then
+          ./build/corejson_benchmarks.exe
         else
           ./build/corejson_benchmarks
         fi
-      shell: bash
 
-    - name: Verify Single Header Generation
+    - name: Verify Single Header Amalgamation
+      shell: bash
       run: |
         python scripts/amalgamate.py
-        git diff --exit-code single_include/corejson/corejson.hpp || (echo "Single header is out of date! Run scripts/amalgamate.py" && exit 1)
-      shell: bash
+        git config core.autocrlf false
+        git diff --ignore-space-at-eol --exit-code single_include/corejson/corejson.hpp || (echo "Single header out of date! Run scripts/amalgamate.py" && exit 1)

@@ -85,7 +85,7 @@ def amalgamate():
 
     combined_content.append(FOOTER)
 
-    with open(output_file, "w", encoding="utf-8") as out:
+    with open(output_file, "w", encoding="utf-8", newline="\n") as out:
         out.write("\n".join(combined_content))
 
     print(f"Successfully generated single-header: {output_file}")
