@@ -25,6 +25,7 @@
 #include "binary/cbor.hpp"
 #include "macro.hpp"
 #include "schema.hpp"
+#include "sax.hpp"
 
 namespace senko {
 

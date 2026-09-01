@@ -146,6 +146,14 @@ public:
         throw parse_error(msg, l, c, pos, snippet);
     }
 
+    void expect_keyword(std::string_view kw) {
+        if (m_pos + kw.size() > m_src.size() || m_src.substr(m_pos, kw.size()) != kw) {
+            throw_parse_error("Expected keyword '" + std::string(kw) + "'");
+        }
+        m_pos += kw.size();
+        m_col += kw.size();
+    }
+
     std::string parse_string() {
         size_t start_pos = m_pos;
         if (m_pos >= m_src.size() || m_src[m_pos] != '"') {

@@ -21,7 +21,8 @@ HEADERS_ORDER = [
     "binary/msgpack.hpp",
     "binary/cbor.hpp",
     "macro.hpp",
-    "schema.hpp"
+    "schema.hpp",
+    "sax.hpp"
 ]
 
 HEADER_GUARD = """/**

@@ -38,6 +38,7 @@ Whether you're developing game engines, low-latency microservices, hardware conf
 
 - **⚡ Blazing Fast Single-Pass Parser:** Zero-copy token scanning without intermediate heap allocations. Over **1,850,000 parses/sec**.
 - **📦 Single Header & Modular Delivery:** Use either the modular includes (`#include <senko/senko.hpp>`) or drop the single header (`single_include/senko/senko.hpp`) into your project.
+- **🌊 Event-Driven Streaming SAX Parser:** Process multi-gigabyte log streams and huge files with zero DOM allocations (`senko::sax_parse`).
 - **🛡️ High-Speed JSON Schema (Draft-07):** Validate JSON payloads at over **120 Million validations/sec** with `doc.validate(schema)` or `senko::schema`.
 - **🔁 Range-Based Iterators & `.items()`:** Native C++ range-based `for` loops on arrays and structured binding `for (auto& [key, val] : doc.items())` on objects.
 - **📁 One-Liner File I/O:** Directly load and save JSON files via `json::parse_file("config.json")` and `doc.dump_file("out.json", 4)`.
@@ -309,6 +310,41 @@ int main() {
         std::cout << "✔ Validated via schema instance!\n";
     }
 
+    return 0;
+}
+```
+
+---
+
+## 🌊 Streaming SAX Parser
+
+Parse and filter massive multi-gigabyte JSON files or streams with **0 DOM allocations**:
+
+```cpp
+#include <iostream>
+#include <senko/senko.hpp>
+
+// Filter error logs on-the-fly without allocating memory for the document
+struct LogFilter : public senko::default_sax_handler {
+    std::string current_key;
+
+    bool key(std::string_view k) {
+        current_key = k;
+        return true;
+    }
+
+    bool string(std::string_view val) {
+        if (current_key == "level" && val == "ERROR") {
+            std::cout << "Found error event!\n";
+        }
+        return true;
+    }
+};
+
+int main() {
+    std::string giant_log_stream = R"([{"level": "INFO"}, {"level": "ERROR"}])";
+    LogFilter filter;
+    senko::sax_parse(giant_log_stream, filter);
     return 0;
 }
 ```

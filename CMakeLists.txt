@@ -60,6 +60,9 @@ if(SENKO_BUILD_EXAMPLES)
 
     add_executable(example_08_json_merge_patch examples/08_json_merge_patch.cpp)
     target_link_libraries(example_08_json_merge_patch PRIVATE senko::senko)
+
+    add_executable(example_09_streaming_sax_parser examples/09_streaming_sax_parser.cpp)
+    target_link_libraries(example_09_streaming_sax_parser PRIVATE senko::senko)
 endif()
 
 # ==============================================================================
@@ -83,6 +86,7 @@ if(SENKO_BUILD_TESTS)
         tests/test_iterators.cpp
         tests/test_file_io.cpp
         tests/test_schema.cpp
+        tests/test_sax.cpp
     )
     target_link_libraries(senko_tests PRIVATE senko::senko)
     target_include_directories(senko_tests PRIVATE tests)
