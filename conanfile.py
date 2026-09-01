@@ -5,13 +5,13 @@ import os
 
 class SenkoJSONConan(ConanFile):
     name = "senkojson"
-    version = "2.3.0"
+    version = "2.4.0"
     license = "MIT"
     author = "Baran <https://github.com/Baranigsiz>"
     url = "https://github.com/Baranigsiz/SenkoJSON"
     homepage = "https://github.com/Baranigsiz/SenkoJSON"
-    description = "Lightning-fast, zero-overhead modern C++17/20 JSON, MessagePack & CBOR library with RFC 9535 JSONPath, RFC 6902 JSON Patch & RFC 7396 Merge Patch."
-    topics = ("json", "msgpack", "cbor", "jsonpath", "json-patch", "merge-patch", "header-only", "cpp17", "cpp20")
+    description = "Lightning-fast, zero-overhead modern C++17/20 JSON, MessagePack & CBOR library with RFC 9535 JSONPath, RFC 6902 Patch, RFC 7396 Merge Patch, JSON Schema & SAX parser."
+    topics = ("json", "msgpack", "cbor", "jsonpath", "json-patch", "merge-patch", "json-schema", "sax", "header-only", "cpp17", "cpp20")
     package_type = "header-library"
     no_copy_source = True
 

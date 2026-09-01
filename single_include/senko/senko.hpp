@@ -2,17 +2,17 @@
  * SenkoJSON - Single Header Amalgamation
  * https://github.com/Baranigsiz/SenkoJSON
  * 
- * Version: 2.3.0
+ * Version: 2.4.0
  * License: MIT
  * 
- * Lightning-fast, zero-overhead modern C++17/20 JSON library with MessagePack, CBOR, JSONPath & JSON Schema.
+ * Lightning-fast, zero-overhead modern C++17/20 JSON library with MessagePack, CBOR, JSONPath, JSON Schema & SAX Streaming.
  */
 
 #ifndef SENKO_SINGLE_AMALGAMATION_HPP
 #define SENKO_SINGLE_AMALGAMATION_HPP
 
 #define SENKO_VERSION_MAJOR 2
-#define SENKO_VERSION_MINOR 3
+#define SENKO_VERSION_MINOR 4
 #define SENKO_VERSION_PATCH 0
 
 

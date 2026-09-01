@@ -133,7 +133,7 @@ int main() {
 
     // Dynamic manipulation
     data["stars"] = stars + 500;
-    data["version"] = "2.3.0";
+    data["version"] = "2.4.0";
     data["tags"].push_back("zero-allocation");
 
     // Range-based for on array
@@ -457,7 +457,7 @@ include(FetchContent)
 FetchContent_Declare(
     SenkoJSON
     GIT_REPOSITORY https://github.com/Baranigsiz/SenkoJSON.git
-    GIT_TAG        v2.3.0
+    GIT_TAG        v2.4.0
 )
 FetchContent_MakeAvailable(SenkoJSON)
 
@@ -486,7 +486,7 @@ Add to your `conanfile.txt` or `conanfile.py`:
 
 ```text
 [requires]
-senkojson/2.3.0
+senkojson/2.4.0
 ```
 
 ---

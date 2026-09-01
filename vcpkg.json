@@ -1,8 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.json.schema.json",
   "name": "senkojson",
-  "version": "2.3.0",
-  "description": "Lightning-fast, zero-overhead modern C++17/20 JSON, MessagePack & CBOR library with RFC 9535 JSONPath, RFC 6902 JSON Patch & RFC 7396 Merge Patch engines.",
+  "version": "2.4.0",
+  "description": "Lightning-fast, zero-overhead modern C++17/20 JSON, MessagePack & CBOR library with RFC 9535 JSONPath, RFC 6902 Patch, RFC 7396 Merge Patch, JSON Schema & SAX streaming.",
   "homepage": "https://github.com/Baranigsiz/SenkoJSON",
   "license": "MIT"
 }

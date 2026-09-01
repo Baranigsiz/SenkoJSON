@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(SenkoJSON VERSION 2.3.0 LANGUAGES CXX)
+project(SenkoJSON VERSION 2.4.0 LANGUAGES CXX)
 
 # ==============================================================================
 # C++ Standard & Compiler Flags
