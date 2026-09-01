@@ -319,6 +319,27 @@ Simply copy [`single_include/senko/senko.hpp`](single_include/senko/senko.hpp) i
 using json = senko::json;
 ```
 
+### Method 3: vcpkg (Manifest Mode)
+
+Add `senkojson` to your `vcpkg.json`:
+
+```json
+{
+  "dependencies": [
+    "senkojson"
+  ]
+}
+```
+
+### Method 4: Conan 2.x
+
+Add to your `conanfile.txt` or `conanfile.py`:
+
+```text
+[requires]
+senkojson/2.2.0
+```
+
 ---
 
 ## 📂 Project Structure
