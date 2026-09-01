@@ -15,6 +15,28 @@
 
 namespace senko {
 
+namespace detail {
+struct char_traits_table {
+    bool is_ws[256]{};
+    bool is_plain_str[256]{};
+
+    constexpr char_traits_table() {
+        is_ws[static_cast<unsigned char>(' ')] = true;
+        is_ws[static_cast<unsigned char>('\t')] = true;
+        is_ws[static_cast<unsigned char>('\r')] = true;
+        is_ws[static_cast<unsigned char>('\n')] = true;
+
+        for (int i = 0x20; i < 256; ++i) {
+            is_plain_str[i] = true;
+        }
+        is_plain_str[static_cast<unsigned char>('"')] = false;
+        is_plain_str[static_cast<unsigned char>('\\')] = false;
+    }
+};
+
+inline constexpr char_traits_table g_char_table{};
+} // namespace detail
+
 enum class token_type : uint8_t {
     end_of_input = 0,
     curly_open,       // {
@@ -44,16 +66,17 @@ public:
     void skip_whitespace_and_comments() {
         if (!m_allow_comments) {
             while (m_pos < m_src.size()) {
-                char c = m_src[m_pos];
-                if (c == ' ' || c == '\t' || c == '\r') {
-                    m_col++;
-                    m_pos++;
-                } else if (c == '\n') {
+                unsigned char c = static_cast<unsigned char>(m_src[m_pos]);
+                if (!detail::g_char_table.is_ws[c]) {
+                    return;
+                }
+                if (c == '\n') {
                     m_pos++;
                     m_line++;
                     m_col = 1;
                 } else {
-                    break;
+                    m_pos++;
+                    m_col++;
                 }
             }
             return;
@@ -174,6 +197,17 @@ public:
                 m_col++;
                 m_pos++; // skip closing "
                 return result;
+            }
+            if (detail::g_char_table.is_plain_str[c]) {
+                m_pos++;
+                m_col++;
+                while (m_pos < m_src.size()) {
+                    unsigned char next_c = static_cast<unsigned char>(m_src[m_pos]);
+                    if (!detail::g_char_table.is_plain_str[next_c]) break;
+                    m_pos++;
+                    m_col++;
+                }
+                continue;
             }
             if (c == '\\') {
                 if (m_pos > chunk_start) {
