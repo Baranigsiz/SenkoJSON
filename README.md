@@ -54,11 +54,11 @@ Whether you're developing game engines, low-latency microservices, hardware conf
 
 | Operation | Payload Size | Latency (us/op) | Throughput (ops/s) | Bandwidth (MB/s) |
 | :--- | :--- | :--- | :--- | :--- |
-| **Parse Small JSON** | 106 Bytes | **0.97 µs** | **1,031,187 ops/s** | **93.42 MB/s** |
-| **Parse Medium JSON** | 630 Bytes | **4.90 µs** | **203,995 ops/s** | **152.72 MB/s** |
-| **Parse Large Numbers Array** | 5,000 Items | **908.46 µs** | **1,101 ops/s** | **62.21 MB/s** |
-| **Dump Minified JSON** | 630 Bytes | **7.34 µs** | **136,245 ops/s** | **102.00 MB/s** |
-| **Dump Pretty JSON (indent 4)** | 630 Bytes | **9.48 µs** | **105,446 ops/s** | **78.94 MB/s** |
+| **Parse Small JSON** | 106 Bytes | **0.55 µs** | **1,823,094 ops/s** | **166.91 MB/s** |
+| **Parse Medium JSON** | 630 Bytes | **3.03 µs** | **329,999 ops/s** | **247.05 MB/s** |
+| **Parse Large Numbers Array** | 5,000 Items | **509.88 µs** | **1,961 ops/s** | **110.84 MB/s** |
+| **Dump Minified JSON** | 630 Bytes | **1.65 µs** | **606,342 ops/s** | **453.93 MB/s** |
+| **Dump Pretty JSON (indent 4)** | 630 Bytes | **2.14 µs** | **467,303 ops/s** | **349.84 MB/s** |
 
 ---
 

@@ -61,46 +61,44 @@ private:
     }
 
     value parse_object(size_t depth) {
-        m_lexer.get(); // consume '{'
+        m_lexer.consume(); // consume '{'
         value::object_t obj;
 
-        m_lexer.skip_whitespace_and_comments();
-        if (m_lexer.peek() == '}') {
-            m_lexer.get(); // consume '}'
+        char c = m_lexer.peek();
+        if (c == '}') {
+            m_lexer.consume(); // consume '}'
             return value(std::move(obj));
         }
 
+        obj.reserve(4);
+
         while (true) {
-            m_lexer.skip_whitespace_and_comments();
             if (m_lexer.peek() != '"') {
                 m_lexer.throw_parse_error("Expected string key in object");
             }
             std::string key = m_lexer.parse_string();
 
-            m_lexer.skip_whitespace_and_comments();
             if (m_lexer.peek() != ':') {
                 m_lexer.throw_parse_error("Expected ':' after object key");
             }
-            m_lexer.get(); // consume ':'
+            m_lexer.consume(); // consume ':'
 
             value val = parse_value(depth);
             obj.emplace_back(std::move(key), std::move(val));
 
-            m_lexer.skip_whitespace_and_comments();
             char next = m_lexer.peek();
             if (next == ',') {
-                m_lexer.get(); // consume ','
-                m_lexer.skip_whitespace_and_comments();
+                m_lexer.consume(); // consume ','
                 if (m_lexer.peek() == '}') {
                     if (m_allow_trailing_comma) {
-                        m_lexer.get(); // consume '}'
+                        m_lexer.consume(); // consume '}'
                         break;
                     } else {
                         m_lexer.throw_parse_error("Trailing comma is not allowed in standard JSON");
                     }
                 }
             } else if (next == '}') {
-                m_lexer.get(); // consume '}'
+                m_lexer.consume(); // consume '}'
                 break;
             } else {
                 m_lexer.throw_parse_error("Expected ',' or '}' in object");
@@ -111,33 +109,33 @@ private:
     }
 
     value parse_array(size_t depth) {
-        m_lexer.get(); // consume '['
+        m_lexer.consume(); // consume '['
         value::array_t arr;
 
-        m_lexer.skip_whitespace_and_comments();
-        if (m_lexer.peek() == ']') {
-            m_lexer.get(); // consume ']'
+        char c = m_lexer.peek();
+        if (c == ']') {
+            m_lexer.consume(); // consume ']'
             return value(std::move(arr));
         }
+
+        arr.reserve(8);
 
         while (true) {
             arr.push_back(parse_value(depth));
 
-            m_lexer.skip_whitespace_and_comments();
             char next = m_lexer.peek();
             if (next == ',') {
-                m_lexer.get(); // consume ','
-                m_lexer.skip_whitespace_and_comments();
+                m_lexer.consume(); // consume ','
                 if (m_lexer.peek() == ']') {
                     if (m_allow_trailing_comma) {
-                        m_lexer.get(); // consume ']'
+                        m_lexer.consume(); // consume ']'
                         break;
                     } else {
                         m_lexer.throw_parse_error("Trailing comma is not allowed in standard JSON");
                     }
                 }
             } else if (next == ']') {
-                m_lexer.get(); // consume ']'
+                m_lexer.consume(); // consume ']'
                 break;
             } else {
                 m_lexer.throw_parse_error("Expected ',' or ']' in array");

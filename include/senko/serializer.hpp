@@ -8,41 +8,66 @@
 #include <iomanip>
 #include <cmath>
 #include <limits>
+#include <charconv>
+#include <cstdio>
+#include <cstring>
 
 namespace senko {
 
-class serializer {
+namespace detail {
+
+class fast_string_serializer {
 public:
-    explicit serializer(std::ostream& os, int indent = -1)
-        : m_os(os), m_indent(indent), m_depth(0) {}
+    explicit fast_string_serializer(std::string& out, int indent = -1)
+        : m_out(out), m_indent(indent), m_depth(0) {}
 
     void dump(const value& v) {
         switch (v.type()) {
             case value_t::null:
-                m_os << "null";
+                m_out.append("null", 4);
                 break;
             case value_t::boolean:
-                m_os << (v.get<bool>() ? "true" : "false");
+                if (v.get<bool>()) {
+                    m_out.append("true", 4);
+                } else {
+                    m_out.append("false", 5);
+                }
                 break;
-            case value_t::number_integer:
-                m_os << v.get<int64_t>();
+            case value_t::number_integer: {
+                char buf[32];
+                auto [ptr, ec] = std::to_chars(buf, buf + sizeof(buf), v.get<int64_t>());
+                m_out.append(buf, ptr - buf);
                 break;
-            case value_t::number_unsigned:
-                m_os << v.get<uint64_t>();
+            }
+            case value_t::number_unsigned: {
+                char buf[32];
+                auto [ptr, ec] = std::to_chars(buf, buf + sizeof(buf), v.get<uint64_t>());
+                m_out.append(buf, ptr - buf);
                 break;
+            }
             case value_t::number_float: {
                 double d = v.get<double>();
                 if (std::isnan(d) || std::isinf(d)) {
-                    m_os << "null"; // RFC 8259 requires NaN/Infinity to be serialized as null
+                    m_out.append("null", 4); // RFC 8259 requires NaN/Infinity to be serialized as null
                 } else {
-                    std::ostringstream ss;
-                    ss << std::setprecision(std::numeric_limits<double>::max_digits10) << d;
-                    std::string s = ss.str();
-                    // Ensure float contains '.' or 'e' to distinguish from integer
-                    if (s.find('.') == std::string::npos && s.find('e') == std::string::npos && s.find('E') == std::string::npos) {
-                        s += ".0";
+                    char buf[64];
+                    auto [ptr, ec] = std::to_chars(buf, buf + sizeof(buf), d);
+                    if (ec == std::errc()) {
+                        std::string_view sv(buf, ptr - buf);
+                        m_out.append(sv);
+                        if (sv.find('.') == std::string_view::npos && sv.find('e') == std::string_view::npos && sv.find('E') == std::string_view::npos) {
+                            m_out.append(".0", 2);
+                        }
+                    } else {
+                        int len = std::snprintf(buf, sizeof(buf), "%.17g", d);
+                        if (len > 0) {
+                            std::string_view sv(buf, len);
+                            m_out.append(sv);
+                            if (sv.find('.') == std::string_view::npos && sv.find('e') == std::string_view::npos && sv.find('E') == std::string_view::npos) {
+                                m_out.append(".0", 2);
+                            }
+                        }
                     }
-                    m_os << s;
                 }
                 break;
             }
@@ -58,97 +83,132 @@ public:
         }
     }
 
-    static std::string dump_to_string(const value& v, int indent = -1) {
-        std::ostringstream ss;
-        serializer s(ss, indent);
-        s.dump(v);
-        return ss.str();
-    }
-
 private:
-    std::ostream& m_os;
+    std::string& m_out;
     int m_indent;
     int m_depth;
 
     void indent_newline() {
         if (m_indent >= 0) {
-            m_os << "\n" << std::string(static_cast<size_t>(m_depth * m_indent), ' ');
+            m_out.push_back('\n');
+            m_out.append(static_cast<size_t>(m_depth * m_indent), ' ');
         }
     }
 
     void dump_string(std::string_view sv) {
-        m_os << '"';
+        m_out.push_back('"');
+        size_t chunk_start = 0;
         for (size_t i = 0; i < sv.size(); ++i) {
             unsigned char c = static_cast<unsigned char>(sv[i]);
+            const char* esc = nullptr;
+            size_t esc_len = 0;
+            char hex_buf[8];
+
             switch (c) {
-                case '"':  m_os << "\\\""; break;
-                case '\\': m_os << "\\\\"; break;
-                case '\b': m_os << "\\b"; break;
-                case '\f': m_os << "\\f"; break;
-                case '\n': m_os << "\\n"; break;
-                case '\r': m_os << "\\r"; break;
-                case '\t': m_os << "\\t"; break;
+                case '"':  esc = "\\\""; esc_len = 2; break;
+                case '\\': esc = "\\\\"; esc_len = 2; break;
+                case '\b': esc = "\\b"; esc_len = 2; break;
+                case '\f': esc = "\\f"; esc_len = 2; break;
+                case '\n': esc = "\\n"; esc_len = 2; break;
+                case '\r': esc = "\\r"; esc_len = 2; break;
+                case '\t': esc = "\\t"; esc_len = 2; break;
                 default:
                     if (c < 0x20) {
-                        // Escape control characters as \u00XX
-                        m_os << "\\u"
-                             << std::hex << std::setw(4) << std::setfill('0')
-                             << static_cast<int>(c)
-                             << std::dec;
-                    } else {
-                        m_os << static_cast<char>(c);
+                        std::snprintf(hex_buf, sizeof(hex_buf), "\\u%04x", c);
+                        esc = hex_buf;
+                        esc_len = 6;
                     }
                     break;
             }
+
+            if (esc) {
+                if (i > chunk_start) {
+                    m_out.append(sv.data() + chunk_start, i - chunk_start);
+                }
+                m_out.append(esc, esc_len);
+                chunk_start = i + 1;
+            }
         }
-        m_os << '"';
+        if (sv.size() > chunk_start) {
+            m_out.append(sv.data() + chunk_start, sv.size() - chunk_start);
+        }
+        m_out.push_back('"');
     }
 
     void dump_array(const value::array_t& arr) {
         if (arr.empty()) {
-            m_os << "[]";
+            m_out.append("[]", 2);
             return;
         }
 
-        m_os << '[';
+        m_out.push_back('[');
         m_depth++;
 
         for (size_t i = 0; i < arr.size(); ++i) {
             indent_newline();
             dump(arr[i]);
             if (i + 1 < arr.size()) {
-                m_os << ',';
+                m_out.push_back(',');
             }
         }
 
         m_depth--;
         indent_newline();
-        m_os << ']';
+        m_out.push_back(']');
     }
 
     void dump_object(const value::object_t& obj) {
         if (obj.empty()) {
-            m_os << "{}";
+            m_out.append("{}", 2);
             return;
         }
 
-        m_os << '{';
+        m_out.push_back('{');
         m_depth++;
 
         for (size_t i = 0; i < obj.size(); ++i) {
             indent_newline();
             dump_string(obj[i].first);
-            m_os << (m_indent >= 0 ? ": " : ":");
+            if (m_indent >= 0) {
+                m_out.append(": ", 2);
+            } else {
+                m_out.push_back(':');
+            }
             dump(obj[i].second);
             if (i + 1 < obj.size()) {
-                m_os << ',';
+                m_out.push_back(',');
             }
         }
 
         m_depth--;
         indent_newline();
-        m_os << '}';
+        m_out.push_back('}');
     }
+};
+
+} // namespace detail
+
+class serializer {
+public:
+    explicit serializer(std::ostream& os, int indent = -1)
+        : m_os(os), m_indent(indent) {}
+
+    void dump(const value& v) {
+        std::string s = dump_to_string(v, m_indent);
+        m_os << s;
+    }
+
+    static std::string dump_to_string(const value& v, int indent = -1) {
+        std::string out;
+        out.reserve(256);
+        detail::fast_string_serializer s(out, indent);
+        s.dump(v);
+        return out;
+    }
+
+private:
+    std::ostream& m_os;
+    int m_indent;
 };
 
 // Inline implementations of value::dump and operator<<
@@ -157,12 +217,13 @@ inline std::string value::dump(int indent) const {
 }
 
 inline void value::dump(std::ostream& os, int indent) const {
-    serializer s(os, indent);
-    s.dump(*this);
+    std::string s = dump(indent);
+    os << s;
 }
 
 inline std::ostream& operator<<(std::ostream& os, const value& j) {
-    j.dump(os, -1);
+    std::string s = j.dump(-1);
+    os << s;
     return os;
 }
 

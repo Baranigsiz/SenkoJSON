@@ -741,6 +741,23 @@ public:
     bool has_more() const noexcept { return m_pos < m_src.size(); }
 
     void skip_whitespace_and_comments() {
+        if (!m_allow_comments) {
+            while (m_pos < m_src.size()) {
+                char c = m_src[m_pos];
+                if (c == ' ' || c == '\t' || c == '\r') {
+                    m_col++;
+                    m_pos++;
+                } else if (c == '\n') {
+                    m_pos++;
+                    m_line++;
+                    m_col = 1;
+                } else {
+                    break;
+                }
+            }
+            return;
+        }
+
         while (m_pos < m_src.size()) {
             char c = m_src[m_pos];
             if (c == ' ' || c == '\t' || c == '\r') {
@@ -749,7 +766,7 @@ public:
                 m_pos++;
                 m_line++;
                 m_col = 1;
-            } else if (m_allow_comments && c == '/' && m_pos + 1 < m_src.size()) {
+            } else if (c == '/' && m_pos + 1 < m_src.size()) {
                 char next = m_src[m_pos + 1];
                 if (next == '/') {
                     // Line comment
@@ -791,12 +808,22 @@ public:
         return m_src[m_pos];
     }
 
-    char get() {
-        skip_whitespace_and_comments();
+    char consume() {
         if (m_pos >= m_src.size()) return '\0';
         char c = m_src[m_pos];
-        advance_char();
+        if (c == '\n') {
+            m_line++;
+            m_col = 1;
+        } else {
+            m_col++;
+        }
+        m_pos++;
         return c;
+    }
+
+    char get() {
+        skip_whitespace_and_comments();
+        return consume();
     }
 
     [[noreturn]] void throw_parse_error(std::string_view msg, size_t err_pos = static_cast<size_t>(-1)) const {
@@ -823,25 +850,34 @@ public:
         if (m_pos >= m_src.size() || m_src[m_pos] != '"') {
             throw_parse_error("Expected '\"' at start of string");
         }
-        advance_char(); // skip opening "
+        m_col++;
+        m_pos++; // skip opening "
 
         std::string result;
+        size_t chunk_start = m_pos;
+
         while (m_pos < m_src.size()) {
-            char c = m_src[m_pos];
+            unsigned char c = static_cast<unsigned char>(m_src[m_pos]);
             if (c == '"') {
-                advance_char(); // skip closing "
+                if (m_pos > chunk_start) {
+                    result.append(m_src.data() + chunk_start, m_pos - chunk_start);
+                }
+                m_col++;
+                m_pos++; // skip closing "
                 return result;
             }
-            if (static_cast<unsigned char>(c) < 0x20) {
-                throw_parse_error("Unescaped control character in string");
-            }
             if (c == '\\') {
-                advance_char();
+                if (m_pos > chunk_start) {
+                    result.append(m_src.data() + chunk_start, m_pos - chunk_start);
+                }
+                m_col++;
+                m_pos++; // skip '\'
                 if (m_pos >= m_src.size()) {
                     throw_parse_error("Unexpected end of input inside escape sequence");
                 }
                 char esc = m_src[m_pos];
-                advance_char();
+                m_col++;
+                m_pos++;
                 switch (esc) {
                     case '"':  result.push_back('"'); break;
                     case '\\': result.push_back('\\'); break;
@@ -857,7 +893,8 @@ public:
                         if (codepoint >= 0xD800 && codepoint <= 0xDBFF) {
                             // High surrogate, expect low surrogate \uDC00 - \uDFFF
                             if (m_pos + 6 <= m_src.size() && m_src[m_pos] == '\\' && m_src[m_pos + 1] == 'u') {
-                                advance_char(); advance_char();
+                                m_col += 2;
+                                m_pos += 2;
                                 uint32_t low = parse_hex4();
                                 if (low >= 0xDC00 && low <= 0xDFFF) {
                                     codepoint = 0x10000 + ((codepoint - 0xD800) << 10) + (low - 0xDC00);
@@ -876,10 +913,19 @@ public:
                     default:
                         throw_parse_error(std::string("Invalid escape character '\\") + esc + "'");
                 }
-            } else {
-                result.push_back(c);
-                advance_char();
+                chunk_start = m_pos;
+                continue;
             }
+            if (c < 0x20) {
+                throw_parse_error("Unescaped control character in string");
+            }
+            if (c == '\n') {
+                m_line++;
+                m_col = 1;
+            } else {
+                m_col++;
+            }
+            m_pos++;
         }
 
         throw_parse_error("Unterminated string literal", start_pos);
@@ -892,20 +938,23 @@ public:
 
         if (m_src[m_pos] == '-') {
             is_negative = true;
-            advance_char();
+            m_col++;
+            m_pos++;
             if (m_pos >= m_src.size() || !std::isdigit(static_cast<unsigned char>(m_src[m_pos]))) {
                 throw_parse_error("Expected digit after minus sign in number");
             }
         }
 
         if (m_src[m_pos] == '0') {
-            advance_char();
+            m_col++;
+            m_pos++;
             if (m_pos < m_src.size() && std::isdigit(static_cast<unsigned char>(m_src[m_pos]))) {
                 throw_parse_error("Leading zeros are not permitted in JSON numbers");
             }
         } else if (std::isdigit(static_cast<unsigned char>(m_src[m_pos]))) {
             while (m_pos < m_src.size() && std::isdigit(static_cast<unsigned char>(m_src[m_pos]))) {
-                advance_char();
+                m_col++;
+                m_pos++;
             }
         } else {
             throw_parse_error("Invalid character in number literal");
@@ -914,37 +963,52 @@ public:
         // Fractional part
         if (m_pos < m_src.size() && m_src[m_pos] == '.') {
             is_float = true;
-            advance_char();
+            m_col++;
+            m_pos++;
             if (m_pos >= m_src.size() || !std::isdigit(static_cast<unsigned char>(m_src[m_pos]))) {
                 throw_parse_error("Expected digit after decimal point");
             }
             while (m_pos < m_src.size() && std::isdigit(static_cast<unsigned char>(m_src[m_pos]))) {
-                advance_char();
+                m_col++;
+                m_pos++;
             }
         }
 
         // Exponent part
         if (m_pos < m_src.size() && (m_src[m_pos] == 'e' || m_src[m_pos] == 'E')) {
             is_float = true;
-            advance_char();
+            m_col++;
+            m_pos++;
             if (m_pos < m_src.size() && (m_src[m_pos] == '+' || m_src[m_pos] == '-')) {
-                advance_char();
+                m_col++;
+                m_pos++;
             }
             if (m_pos >= m_src.size() || !std::isdigit(static_cast<unsigned char>(m_src[m_pos]))) {
                 throw_parse_error("Expected digit in exponent");
             }
             while (m_pos < m_src.size() && std::isdigit(static_cast<unsigned char>(m_src[m_pos]))) {
-                advance_char();
+                m_col++;
+                m_pos++;
             }
         }
 
         std::string_view num_str = m_src.substr(start_pos, m_pos - start_pos);
 
         if (is_float) {
+            double d = 0.0;
+            auto [ptr, ec] = std::from_chars(num_str.data(), num_str.data() + num_str.size(), d);
+            if (ec == std::errc()) {
+                return value(d);
+            }
+            // Fast stack buffer fallback to avoid heap allocation
+            char stack_buf[64];
+            if (num_str.size() < sizeof(stack_buf)) {
+                std::memcpy(stack_buf, num_str.data(), num_str.size());
+                stack_buf[num_str.size()] = '\0';
+                return value(std::strtod(stack_buf, nullptr));
+            }
             std::string temp(num_str);
-            char* end_ptr = nullptr;
-            double d = std::strtod(temp.c_str(), &end_ptr);
-            return value(d);
+            return value(std::strtod(temp.c_str(), nullptr));
         }
 
         if (is_negative) {
@@ -953,7 +1017,13 @@ public:
             if (ec == std::errc()) {
                 return value(val);
             }
-            // Fallback to double on overflow
+            // Fallback to double on overflow without heap allocation
+            char stack_buf[64];
+            if (num_str.size() < sizeof(stack_buf)) {
+                std::memcpy(stack_buf, num_str.data(), num_str.size());
+                stack_buf[num_str.size()] = '\0';
+                return value(std::strtod(stack_buf, nullptr));
+            }
             std::string temp(num_str);
             return value(std::strtod(temp.c_str(), nullptr));
         } else {
@@ -965,7 +1035,13 @@ public:
                 }
                 return value(uval);
             }
-            // Fallback to double on overflow
+            // Fallback to double on overflow without heap allocation
+            char stack_buf[64];
+            if (num_str.size() < sizeof(stack_buf)) {
+                std::memcpy(stack_buf, num_str.data(), num_str.size());
+                stack_buf[num_str.size()] = '\0';
+                return value(std::strtod(stack_buf, nullptr));
+            }
             std::string temp(num_str);
             return value(std::strtod(temp.c_str(), nullptr));
         }
@@ -1096,46 +1172,44 @@ private:
     }
 
     value parse_object(size_t depth) {
-        m_lexer.get(); // consume '{'
+        m_lexer.consume(); // consume '{'
         value::object_t obj;
 
-        m_lexer.skip_whitespace_and_comments();
-        if (m_lexer.peek() == '}') {
-            m_lexer.get(); // consume '}'
+        char c = m_lexer.peek();
+        if (c == '}') {
+            m_lexer.consume(); // consume '}'
             return value(std::move(obj));
         }
 
+        obj.reserve(4);
+
         while (true) {
-            m_lexer.skip_whitespace_and_comments();
             if (m_lexer.peek() != '"') {
                 m_lexer.throw_parse_error("Expected string key in object");
             }
             std::string key = m_lexer.parse_string();
 
-            m_lexer.skip_whitespace_and_comments();
             if (m_lexer.peek() != ':') {
                 m_lexer.throw_parse_error("Expected ':' after object key");
             }
-            m_lexer.get(); // consume ':'
+            m_lexer.consume(); // consume ':'
 
             value val = parse_value(depth);
             obj.emplace_back(std::move(key), std::move(val));
 
-            m_lexer.skip_whitespace_and_comments();
             char next = m_lexer.peek();
             if (next == ',') {
-                m_lexer.get(); // consume ','
-                m_lexer.skip_whitespace_and_comments();
+                m_lexer.consume(); // consume ','
                 if (m_lexer.peek() == '}') {
                     if (m_allow_trailing_comma) {
-                        m_lexer.get(); // consume '}'
+                        m_lexer.consume(); // consume '}'
                         break;
                     } else {
                         m_lexer.throw_parse_error("Trailing comma is not allowed in standard JSON");
                     }
                 }
             } else if (next == '}') {
-                m_lexer.get(); // consume '}'
+                m_lexer.consume(); // consume '}'
                 break;
             } else {
                 m_lexer.throw_parse_error("Expected ',' or '}' in object");
@@ -1146,33 +1220,33 @@ private:
     }
 
     value parse_array(size_t depth) {
-        m_lexer.get(); // consume '['
+        m_lexer.consume(); // consume '['
         value::array_t arr;
 
-        m_lexer.skip_whitespace_and_comments();
-        if (m_lexer.peek() == ']') {
-            m_lexer.get(); // consume ']'
+        char c = m_lexer.peek();
+        if (c == ']') {
+            m_lexer.consume(); // consume ']'
             return value(std::move(arr));
         }
+
+        arr.reserve(8);
 
         while (true) {
             arr.push_back(parse_value(depth));
 
-            m_lexer.skip_whitespace_and_comments();
             char next = m_lexer.peek();
             if (next == ',') {
-                m_lexer.get(); // consume ','
-                m_lexer.skip_whitespace_and_comments();
+                m_lexer.consume(); // consume ','
                 if (m_lexer.peek() == ']') {
                     if (m_allow_trailing_comma) {
-                        m_lexer.get(); // consume ']'
+                        m_lexer.consume(); // consume ']'
                         break;
                     } else {
                         m_lexer.throw_parse_error("Trailing comma is not allowed in standard JSON");
                     }
                 }
             } else if (next == ']') {
-                m_lexer.get(); // consume ']'
+                m_lexer.consume(); // consume ']'
                 break;
             } else {
                 m_lexer.throw_parse_error("Expected ',' or ']' in array");
@@ -1232,41 +1306,66 @@ inline value value::parse(std::istream& is, bool allow_comments, bool allow_trai
 #include <iomanip>
 #include <cmath>
 #include <limits>
+#include <charconv>
+#include <cstdio>
+#include <cstring>
 
 namespace senko {
 
-class serializer {
+namespace detail {
+
+class fast_string_serializer {
 public:
-    explicit serializer(std::ostream& os, int indent = -1)
-        : m_os(os), m_indent(indent), m_depth(0) {}
+    explicit fast_string_serializer(std::string& out, int indent = -1)
+        : m_out(out), m_indent(indent), m_depth(0) {}
 
     void dump(const value& v) {
         switch (v.type()) {
             case value_t::null:
-                m_os << "null";
+                m_out.append("null", 4);
                 break;
             case value_t::boolean:
-                m_os << (v.get<bool>() ? "true" : "false");
+                if (v.get<bool>()) {
+                    m_out.append("true", 4);
+                } else {
+                    m_out.append("false", 5);
+                }
                 break;
-            case value_t::number_integer:
-                m_os << v.get<int64_t>();
+            case value_t::number_integer: {
+                char buf[32];
+                auto [ptr, ec] = std::to_chars(buf, buf + sizeof(buf), v.get<int64_t>());
+                m_out.append(buf, ptr - buf);
                 break;
-            case value_t::number_unsigned:
-                m_os << v.get<uint64_t>();
+            }
+            case value_t::number_unsigned: {
+                char buf[32];
+                auto [ptr, ec] = std::to_chars(buf, buf + sizeof(buf), v.get<uint64_t>());
+                m_out.append(buf, ptr - buf);
                 break;
+            }
             case value_t::number_float: {
                 double d = v.get<double>();
                 if (std::isnan(d) || std::isinf(d)) {
-                    m_os << "null"; // RFC 8259 requires NaN/Infinity to be serialized as null
+                    m_out.append("null", 4); // RFC 8259 requires NaN/Infinity to be serialized as null
                 } else {
-                    std::ostringstream ss;
-                    ss << std::setprecision(std::numeric_limits<double>::max_digits10) << d;
-                    std::string s = ss.str();
-                    // Ensure float contains '.' or 'e' to distinguish from integer
-                    if (s.find('.') == std::string::npos && s.find('e') == std::string::npos && s.find('E') == std::string::npos) {
-                        s += ".0";
+                    char buf[64];
+                    auto [ptr, ec] = std::to_chars(buf, buf + sizeof(buf), d);
+                    if (ec == std::errc()) {
+                        std::string_view sv(buf, ptr - buf);
+                        m_out.append(sv);
+                        if (sv.find('.') == std::string_view::npos && sv.find('e') == std::string_view::npos && sv.find('E') == std::string_view::npos) {
+                            m_out.append(".0", 2);
+                        }
+                    } else {
+                        int len = std::snprintf(buf, sizeof(buf), "%.17g", d);
+                        if (len > 0) {
+                            std::string_view sv(buf, len);
+                            m_out.append(sv);
+                            if (sv.find('.') == std::string_view::npos && sv.find('e') == std::string_view::npos && sv.find('E') == std::string_view::npos) {
+                                m_out.append(".0", 2);
+                            }
+                        }
                     }
-                    m_os << s;
                 }
                 break;
             }
@@ -1282,97 +1381,132 @@ public:
         }
     }
 
-    static std::string dump_to_string(const value& v, int indent = -1) {
-        std::ostringstream ss;
-        serializer s(ss, indent);
-        s.dump(v);
-        return ss.str();
-    }
-
 private:
-    std::ostream& m_os;
+    std::string& m_out;
     int m_indent;
     int m_depth;
 
     void indent_newline() {
         if (m_indent >= 0) {
-            m_os << "\n" << std::string(static_cast<size_t>(m_depth * m_indent), ' ');
+            m_out.push_back('\n');
+            m_out.append(static_cast<size_t>(m_depth * m_indent), ' ');
         }
     }
 
     void dump_string(std::string_view sv) {
-        m_os << '"';
+        m_out.push_back('"');
+        size_t chunk_start = 0;
         for (size_t i = 0; i < sv.size(); ++i) {
             unsigned char c = static_cast<unsigned char>(sv[i]);
+            const char* esc = nullptr;
+            size_t esc_len = 0;
+            char hex_buf[8];
+
             switch (c) {
-                case '"':  m_os << "\\\""; break;
-                case '\\': m_os << "\\\\"; break;
-                case '\b': m_os << "\\b"; break;
-                case '\f': m_os << "\\f"; break;
-                case '\n': m_os << "\\n"; break;
-                case '\r': m_os << "\\r"; break;
-                case '\t': m_os << "\\t"; break;
+                case '"':  esc = "\\\""; esc_len = 2; break;
+                case '\\': esc = "\\\\"; esc_len = 2; break;
+                case '\b': esc = "\\b"; esc_len = 2; break;
+                case '\f': esc = "\\f"; esc_len = 2; break;
+                case '\n': esc = "\\n"; esc_len = 2; break;
+                case '\r': esc = "\\r"; esc_len = 2; break;
+                case '\t': esc = "\\t"; esc_len = 2; break;
                 default:
                     if (c < 0x20) {
-                        // Escape control characters as \u00XX
-                        m_os << "\\u"
-                             << std::hex << std::setw(4) << std::setfill('0')
-                             << static_cast<int>(c)
-                             << std::dec;
-                    } else {
-                        m_os << static_cast<char>(c);
+                        std::snprintf(hex_buf, sizeof(hex_buf), "\\u%04x", c);
+                        esc = hex_buf;
+                        esc_len = 6;
                     }
                     break;
             }
+
+            if (esc) {
+                if (i > chunk_start) {
+                    m_out.append(sv.data() + chunk_start, i - chunk_start);
+                }
+                m_out.append(esc, esc_len);
+                chunk_start = i + 1;
+            }
         }
-        m_os << '"';
+        if (sv.size() > chunk_start) {
+            m_out.append(sv.data() + chunk_start, sv.size() - chunk_start);
+        }
+        m_out.push_back('"');
     }
 
     void dump_array(const value::array_t& arr) {
         if (arr.empty()) {
-            m_os << "[]";
+            m_out.append("[]", 2);
             return;
         }
 
-        m_os << '[';
+        m_out.push_back('[');
         m_depth++;
 
         for (size_t i = 0; i < arr.size(); ++i) {
             indent_newline();
             dump(arr[i]);
             if (i + 1 < arr.size()) {
-                m_os << ',';
+                m_out.push_back(',');
             }
         }
 
         m_depth--;
         indent_newline();
-        m_os << ']';
+        m_out.push_back(']');
     }
 
     void dump_object(const value::object_t& obj) {
         if (obj.empty()) {
-            m_os << "{}";
+            m_out.append("{}", 2);
             return;
         }
 
-        m_os << '{';
+        m_out.push_back('{');
         m_depth++;
 
         for (size_t i = 0; i < obj.size(); ++i) {
             indent_newline();
             dump_string(obj[i].first);
-            m_os << (m_indent >= 0 ? ": " : ":");
+            if (m_indent >= 0) {
+                m_out.append(": ", 2);
+            } else {
+                m_out.push_back(':');
+            }
             dump(obj[i].second);
             if (i + 1 < obj.size()) {
-                m_os << ',';
+                m_out.push_back(',');
             }
         }
 
         m_depth--;
         indent_newline();
-        m_os << '}';
+        m_out.push_back('}');
     }
+};
+
+} // namespace detail
+
+class serializer {
+public:
+    explicit serializer(std::ostream& os, int indent = -1)
+        : m_os(os), m_indent(indent) {}
+
+    void dump(const value& v) {
+        std::string s = dump_to_string(v, m_indent);
+        m_os << s;
+    }
+
+    static std::string dump_to_string(const value& v, int indent = -1) {
+        std::string out;
+        out.reserve(256);
+        detail::fast_string_serializer s(out, indent);
+        s.dump(v);
+        return out;
+    }
+
+private:
+    std::ostream& m_os;
+    int m_indent;
 };
 
 // Inline implementations of value::dump and operator<<
@@ -1381,12 +1515,13 @@ inline std::string value::dump(int indent) const {
 }
 
 inline void value::dump(std::ostream& os, int indent) const {
-    serializer s(os, indent);
-    s.dump(*this);
+    std::string s = dump(indent);
+    os << s;
 }
 
 inline std::ostream& operator<<(std::ostream& os, const value& j) {
-    j.dump(os, -1);
+    std::string s = j.dump(-1);
+    os << s;
     return os;
 }
 
