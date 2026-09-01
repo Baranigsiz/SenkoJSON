@@ -27,7 +27,7 @@ HEADER_GUARD = """/**
  * SenkoJSON - Single Header Amalgamation
  * https://github.com/Baranigsiz/SenkoJSON
  * 
- * Version: 2.1.0
+ * Version: 2.2.0
  * License: MIT
  * 
  * Lightning-fast, zero-overhead modern C++17/20 JSON library with MessagePack, CBOR & JSONPath.
@@ -37,7 +37,7 @@ HEADER_GUARD = """/**
 #define SENKO_SINGLE_AMALGAMATION_HPP
 
 #define SENKO_VERSION_MAJOR 2
-#define SENKO_VERSION_MINOR 1
+#define SENKO_VERSION_MINOR 2
 #define SENKO_VERSION_PATCH 0
 """
 

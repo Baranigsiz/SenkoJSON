@@ -90,7 +90,7 @@ int main() {
 
     // Dynamic manipulation
     data["stars"] = stars + 500;
-    data["version"] = "2.1.0";
+    data["version"] = "2.2.0";
     data["tags"].push_back("zero-allocation");
 
     // Safe fallback value
@@ -303,7 +303,7 @@ include(FetchContent)
 FetchContent_Declare(
     SenkoJSON
     GIT_REPOSITORY https://github.com/Baranigsiz/SenkoJSON.git
-    GIT_TAG        v2.1.0
+    GIT_TAG        v2.2.0
 )
 FetchContent_MakeAvailable(SenkoJSON)
 
