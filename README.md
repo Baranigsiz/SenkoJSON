@@ -12,11 +12,12 @@
 
 <p align="center">
   <a href="#-key-features">Key Features</a> •
+  <a href="#-quick-reference--cheat-sheet">Quick Reference</a> •
   <a href="#-quick-start">Quick Start</a> •
   <a href="#-binary-json-msgpack--cbor">Binary JSON</a> •
-  <a href="#-json-patch--diff-rfc-6902">JSON Patch</a> •
   <a href="#-jsonpath-rfc-9535">JSONPath</a> •
-  <a href="#-struct-reflection--serialization">Struct Reflection</a> •
+  <a href="#-json-schema-validation-draft-07">JSON Schema</a> •
+  <a href="#-streaming-sax-parser">SAX Streaming</a> •
   <a href="#-benchmarks">Benchmarks</a> •
   <a href="#-integration">Integration</a> •
   <a href="#-license">License</a>
@@ -37,20 +38,41 @@ Whether you're developing game engines, low-latency microservices, hardware conf
 ## ✨ Key Features
 
 - **⚡ Blazing Fast Single-Pass Parser:** Zero-copy token scanning without intermediate heap allocations. Over **1,850,000 parses/sec**.
-- **📦 Single Header & Modular Delivery:** Use either the modular includes (`#include <senko/senko.hpp>`) or drop the single header (`single_include/senko/senko.hpp`) into your project.
-- **🌊 Event-Driven Streaming SAX Parser:** Process multi-gigabyte log streams and huge files with zero DOM allocations (`senko::sax_parse`).
+- **📦 Single Header & Modular Delivery:** Use either the modular includes (`#include <senko/senko.hpp>`) or drop the single header (`single_include/senko/senko.hpp`) into your project (only ~120 KB).
+- **🌊 Event-Driven Streaming SAX Parser:** Process multi-gigabyte log streams and massive JSON files with zero DOM allocations (`senko::sax_parse`).
 - **🛡️ High-Speed JSON Schema (Draft-07):** Validate JSON payloads at over **120 Million validations/sec** with `doc.validate(schema)` or `senko::schema`.
 - **🔁 Range-Based Iterators & `.items()`:** Native C++ range-based `for` loops on arrays and structured binding `for (auto& [key, val] : doc.items())` on objects.
 - **📁 One-Liner File I/O:** Directly load and save JSON files via `json::parse_file("config.json")` and `doc.dump_file("out.json", 4)`.
 - **🔄 RFC 6902 Patch & RFC 7396 Merge Patch:** Calculate deltas with `json::diff(a, b)`, apply RFC 6902 patches, and merge updates with `doc.merge_patch(patch)`.
 - **📦 Universal Binary JSON (MessagePack & CBOR):** Serialize and deserialize directly to/from binary buffers (`to_msgpack`, `from_msgpack`, `to_cbor`, `from_cbor`) for 20-50% smaller payloads and wire speed.
 - **🔍 RFC 9535 JSONPath Engine:** SQL-like querying with wildcards (`[*]`), recursive descent (`$..key`, `$..*`), array slices (`[0:3]`, `[::2]`), and conditional filters (`[?(@.price < 10)]`).
-- **🎯 RFC 6901 JSON Pointer:** Query and mutate deep nested structures with `/store/book/0/author` syntax.
-- **🧬 Struct Reflection & STL Adapters:** Serialize and deserialize structs with up to 32 fields (`SENKO_BIND`), `std::optional`, `std::map`, `std::vector`, `std::pair` out-of-the-box.
+- **🎯 RFC 6901 JSON Pointer & Flattening:** Query deep structures with `/store/book/0/author`, `doc.flatten()` and `doc.unflatten()`.
+- **🧬 Struct Reflection & STL Adapters:** Serialize and deserialize structs with up to 32 fields (`SENKO_BIND`), `std::optional`, `std::map`, `std::vector`, `std::pair`, `std::unordered_set<json>` out-of-the-box.
 - **🧠 Memory-Efficient DOM:** Powered by compact `std::variant` tagged unions—no bloated node structures.
 - **🌐 Full UTF-8 & Surrogate Pairs:** Strict RFC 8259 compliance with UTF-16 surrogate pairs (`\uD83D\uDE00` -> 😀).
 - **🛠️ Permissive Config Mode:** Optional support for C/C++ style comments (`//`, `/* */`) and trailing commas for configuration files.
 - **🛡️ Rock-Solid Reliability:** 100% test coverage across multiple platforms and compilers (GCC, Clang, MSVC).
+
+---
+
+## 📑 Quick Reference & Cheat-Sheet
+
+| Category | Methods / Functions | Example Usage |
+| :--- | :--- | :--- |
+| **Parsing & File I/O** | `json::parse()`, `json::parse_file()`, `""_json` | `json j = json::parse(str);`, `json j = "{\"a\":1}"_json;` |
+| **Dumping & Output** | `dump(indent)`, `dump_file(path, indent)`, `operator<<` | `std::string s = j.dump(4);`, `j.dump_file("out.json", 2);` |
+| **Type Inspection** | `is_null()`, `is_boolean()`, `is_number()`, `is_string()`, `is_array()`, `is_object()` | `if (j["age"].is_number()) { ... }` |
+| **Element Access** | `operator[]`, `at()`, `get<T>()`, `value_or(key, default)` | `int x = j["count"].get<int>();`, `std::string s = j.value_or("k", "fallback");` |
+| **Iterators & Views** | `begin()`, `end()`, `items()` (Structured Binding) | `for (auto& [k, v] : j.items()) { ... }` |
+| **Modifiers** | `push_back()`, `contains()`, `erase()`, `clear()`, `size()`, `empty()` | `j.push_back(42);`, `if (j.contains("key")) { ... }` |
+| **JSON Pointer (RFC 6901)** | `at_ptr()`, `operator[]`, `value_or(ptr, default)`, `flatten()`, `unflatten()` | `j["/user/name"_json_pointer]`, `json flat = j.flatten();` |
+| **JSONPath (RFC 9535)** | `jsonpath(query)`, `jsonpath_first(query)` | `auto res = j.jsonpath("$.store.books[0:3].title");` |
+| **JSON Patch (RFC 6902)** | `patch()`, `patch_in_place()`, `json::diff(src, tgt)` | `json patch = json::diff(a, b); a.patch_in_place(patch);` |
+| **JSON Merge Patch (RFC 7396)** | `merge_patch()`, `merge_patch_in_place()` | `j.merge_patch_in_place(delta_patch);` |
+| **JSON Schema (Draft-07)** | `validate(schema, &err)`, `senko::schema` | `if (j.validate(schema, &err)) { ... }` |
+| **Streaming SAX** | `senko::sax_parse(input, handler)` | `senko::sax_parse(log_stream, custom_sax_handler);` |
+| **Binary Formats** | `to_msgpack()`, `from_msgpack()`, `to_cbor()`, `from_cbor()` | `auto bin = senko::to_msgpack(j); json j2 = senko::from_msgpack(bin);` |
+| **Struct Reflection** | `SENKO_BIND(StructName, member1, ...)` | `SENKO_BIND(Player, name, score, level)` |
 
 ---
 
@@ -68,17 +90,20 @@ Whether you're developing game engines, low-latency microservices, hardware conf
 | **MessagePack Encode** | 630 Bytes | **1.11 µs** | **897,122 ops/s** | **671.62 MB/s** |
 | **JSON Schema Validation** | 630 Bytes | **0.01 µs** | **128,976,784 ops/s** | **96,556 MB/s** |
 
-### ⚡ Performance Comparison
+### ⚡ Why SenkoJSON? (Feature & Performance Comparison)
 
-| Feature / Metric | SenkoJSON | nlohmann/json | RapidJSON |
+| Feature / Metric | SenkoJSON v2.3 | nlohmann/json | RapidJSON |
 | :--- | :---: | :---: | :---: |
-| **Header-Only & Zero-Dependency** | ✅ Yes | ✅ Yes | ✅ Yes |
-| **JSONPath Engine (RFC 9535)** | ✅ Built-in | ❌ No | ❌ No |
-| **JSON Merge Patch (RFC 7396)** | ✅ Built-in | ✅ Yes | ❌ No |
-| **MessagePack & CBOR (RFC 8949)** | ✅ Built-in | ✅ Built-in | ❌ (JSON only) |
-| **JSON Schema Validation (Draft-07)** | ✅ Built-in | ❌ External plugin | ✅ Built-in |
-| **Reflection / Struct Binding** | ✅ Built-in (`SENKO_BIND`) | ⚠️ Macro-heavy | ❌ Manual |
-| **Small Document Parse Throughput** | **~1.88M ops/s** | ~1.10M ops/s | ~1.95M ops/s |
+| **Single-Header File Size** | 🏆 **~120 KB** (Compact & Lean) | 🐌 **~2.8 MB** (32,000 lines) | ~1.1 MB |
+| **Clean Build Compile Time** | ⚡ **~0.5 - 1.2s** (Ultra-Fast) | 🐢 **8 - 25s** (Heavy Template Bloat) | ~1.5s |
+| **Parse Throughput (Small JSON)** | ⚡ **~1.88M ops/s** | ~1.10M ops/s | ~1.95M ops/s |
+| **JSONPath Engine (RFC 9535)** | ✅ **Built-in** | ❌ No | ❌ No |
+| **JSON Schema Validator (Draft-07)** | ✅ **Built-in (128M ops/s)** | ❌ External plugin required | ✅ Built-in |
+| **Streaming Event SAX Parser** | ✅ **Built-in (`sax_parse`)** | ⚠️ Complex | ✅ Built-in |
+| **JSON Merge Patch (RFC 7396)** | ✅ **Built-in** | ✅ Built-in | ❌ No |
+| **Binary JSON (MessagePack & CBOR)** | ✅ **Built-in** | ✅ Built-in | ❌ JSON only |
+| **Reflection / Struct Binding** | ✅ **Built-in (`SENKO_BIND` up to 32 args)** | ⚠️ Macro-heavy | ❌ Manual |
+| **Default Insertion Order Preserved** | ✅ **Yes (`std::vector<pair>`)** | ❌ No (`std::map` by default) | ❌ No |
 
 ---
 
@@ -108,7 +133,7 @@ int main() {
 
     // Dynamic manipulation
     data["stars"] = stars + 500;
-    data["version"] = "2.2.0";
+    data["version"] = "2.3.0";
     data["tags"].push_back("zero-allocation");
 
     // Range-based for on array
@@ -185,84 +210,6 @@ auto authors = store.jsonpath("$..author");
 
 // 4. Conditional Filter: find books cheaper than $10
 auto cheap_books = store.jsonpath("$.store.book[?(@.price < 10.0)].title");
-```
-
----
-
-## 🧬 Struct Reflection & Serialization
-
-SenkoJSON makes binding C++ structures to JSON effortless:
-
-```cpp
-#include <iostream>
-#include <senko/senko.hpp>
-
-using json = senko::json;
-
-struct ServerConfig {
-    std::string host;
-    int port;
-    bool ssl;
-};
-SENKO_BIND(ServerConfig, host, port, ssl)
-
-struct AppConfig {
-    std::string app_name;
-    ServerConfig server;
-};
-SENKO_BIND(AppConfig, app_name, server)
-
-int main() {
-    // 1. C++ Struct -> JSON
-    AppConfig config{"MyService", ServerConfig{"127.0.0.1", 8080, true}};
-    json j = config;
-    std::cout << j.dump(2) << "\n";
-
-    // 2. JSON -> C++ Struct
-    std::string input = R"({"app_name":"NewService","server":{"host":"0.0.0.0","port":9000,"ssl":false}})";
-    AppConfig loaded = json::parse(input).get<AppConfig>();
-
-    std::cout << "Loaded host: " << loaded.server.host << ":" << loaded.server.port << "\n";
-    return 0;
-}
-```
-
----
-
-## 🔄 JSON Patch & Diff (RFC 6902)
-
-Calculate delta patches between documents and apply updates seamlessly:
-
-```cpp
-#include <iostream>
-#include <senko/senko.hpp>
-
-using json = senko::json;
-
-int main() {
-    json original = {
-        {"service", "Payments"},
-        {"version", "1.0.0"},
-        {"endpoints", {"/pay", "/refund"}}
-    };
-
-    json updated = {
-        {"service", "Payments"},
-        {"version", "1.1.0"},
-        {"endpoints", {"/pay", "/refund", "/webhook"}},
-        {"status", "active"}
-    };
-
-    // 1. Calculate delta patch
-    json patch = json::diff(original, updated);
-    std::cout << "Delta Patch:\n" << patch.dump(2) << "\n";
-
-    // 2. Apply patch to update original document in-place
-    original.patch_in_place(patch);
-
-    // original is now identical to updated!
-    return 0;
-}
 ```
 
 ---
@@ -351,14 +298,115 @@ int main() {
 
 ---
 
-## 📦 Extended STL Types
+## 🎯 JSON Pointer & Flattening (RFC 6901)
 
-Out-of-the-box support for `std::optional`, `std::map`, `std::unordered_map`, `std::vector`, `std::pair`, `std::set`:
+Query deep structures, flatten nested hierarchies into key-value tables, and restore them seamlessly:
+
+```cpp
+#include <iostream>
+#include <senko/senko.hpp>
+using namespace senko::literals;
+
+int main() {
+    senko::json doc = {
+        {"user", {
+            {"name", "Baran"},
+            {"address", {{"city", "Tokyo"}, {"zip", "100-0001"}}},
+            {"skills", {"C++17", "Systems"}}
+        }}
+    };
+
+    // 1. Query via Pointer with safe fallback
+    std::string name = doc.value_or("/user/name"_json_pointer, std::string("Unknown"));
+
+    // 2. Flatten nested structure
+    senko::json flat = doc.flatten();
+    // flat is: {"/user/name": "Baran", "/user/address/city": "Tokyo", "/user/skills/0": "C++17", ...}
+    std::cout << flat.dump(2) << "\n";
+
+    // 3. Unflatten back to original nested hierarchy
+    senko::json restored = flat.unflatten();
+    // restored == doc!
+    return 0;
+}
+```
+
+---
+
+## 🧬 Struct Reflection & Serialization
+
+SenkoJSON makes binding C++ structures to JSON effortless:
+
+```cpp
+#include <iostream>
+#include <senko/senko.hpp>
+
+using json = senko::json;
+
+struct ServerConfig {
+    std::string host;
+    int port;
+    bool ssl;
+};
+SENKO_BIND(ServerConfig, host, port, ssl)
+
+struct AppConfig {
+    std::string app_name;
+    ServerConfig server;
+};
+SENKO_BIND(AppConfig, app_name, server)
+
+int main() {
+    // 1. C++ Struct -> JSON
+    AppConfig config{"MyService", ServerConfig{"127.0.0.1", 8080, true}};
+    json j = config;
+    std::cout << j.dump(2) << "\n";
+
+    // 2. JSON -> C++ Struct
+    std::string input = R"({"app_name":"NewService","server":{"host":"0.0.0.0","port":9000,"ssl":false}})";
+    AppConfig loaded = json::parse(input).get<AppConfig>();
+
+    std::cout << "Loaded host: " << loaded.server.host << ":" << loaded.server.port << "\n";
+    return 0;
+}
+```
+
+---
+
+## 🔄 JSON Patch (RFC 6902) & Merge Patch (RFC 7396)
+
+```cpp
+#include <iostream>
+#include <senko/senko.hpp>
+
+using json = senko::json;
+
+int main() {
+    json original = {{"service", "Payments"}, {"version", "1.0.0"}};
+    json updated  = {{"service", "Payments"}, {"version", "1.1.0"}, {"status", "active"}};
+
+    // 1. RFC 6902 Patch & Diff
+    json patch = json::diff(original, updated);
+    original.patch_in_place(patch);
+
+    // 2. RFC 7396 Merge Patch (REST API deltas)
+    json delta = R"({"version": "2.0.0", "status": null})"_json;
+    original.merge_patch_in_place(delta); // deletes 'status', updates 'version'
+
+    return 0;
+}
+```
+
+---
+
+## 📦 Extended STL Types & Hash Support
+
+Out-of-the-box support for `std::optional`, `std::map`, `std::unordered_map`, `std::vector`, `std::pair`, `std::set`, and `std::unordered_set<senko::json>`:
 
 ```cpp
 #include <optional>
 #include <map>
-#include <vector>
+#include <unordered_set>
 #include <senko/senko.hpp>
 
 struct UserConfig {
@@ -372,34 +420,28 @@ SENKO_BIND(UserConfig, name, email, tags, scores)
 int main() {
     UserConfig user{"Baran", std::nullopt, {"cpp", "fast"}, {{"level", 99}}};
     senko::json j = user; // Automatically serialized!
+
+    // std::hash support (use json as keys in hash sets/maps)
+    std::unordered_set<senko::json> unique_records;
+    unique_records.insert(j);
+
     return 0;
 }
 ```
 
 ---
 
-## 🎯 JSON Pointer (RFC 6901)
+## 💻 Supported Compilers & Standards
 
-Effortlessly query deep structures:
+SenkoJSON requires a compliant **C++17 or C++20** compiler:
 
-```cpp
-#include <senko/senko.hpp>
-using namespace senko::literals;
-
-json doc = json::parse(R"({
-    "store": {
-        "books": [
-            {"title": "The C++ Programming Language", "author": "Bjarne Stroustrup"}
-        ]
-    }
-})");
-
-// Query via RFC 6901 Pointer
-std::string author = doc["/store/books/0/author"_json_pointer].get<std::string>();
-
-// Mutate via Pointer
-doc["/store/books/0/author"_json_pointer] = "B. Stroustrup";
-```
+| Compiler | Minimum Version | Tested & Verified |
+| :--- | :---: | :---: |
+| **GCC** | 9.0+ | ✅ 11.x, 12.x, 13.x, 14.x, 15.x |
+| **Clang** | 10.0+ | ✅ 14.x, 15.x, 16.x, 17.x, 18.x |
+| **Microsoft Visual Studio (MSVC)** | 2019 (16.0)+ | ✅ MSVC 2019, 2022 (v143) |
+| **Apple Clang** | 12.0+ | ✅ Xcode 14.x, 15.x |
+| **MinGW-w64** | 9.0+ | ✅ UCRT64 / MINGW64 |
 
 ---
 
@@ -415,7 +457,7 @@ include(FetchContent)
 FetchContent_Declare(
     SenkoJSON
     GIT_REPOSITORY https://github.com/Baranigsiz/SenkoJSON.git
-    GIT_TAG        v2.2.0
+    GIT_TAG        v2.3.0
 )
 FetchContent_MakeAvailable(SenkoJSON)
 
@@ -424,12 +466,7 @@ target_link_libraries(my_project PRIVATE senko::senko)
 
 ### Method 2: Single Header Drop-In
 
-Simply copy [`single_include/senko/senko.hpp`](single_include/senko/senko.hpp) into your project's include folder and include it:
-
-```cpp
-#include "senko.hpp"
-using json = senko::json;
-```
+Simply copy [`single_include/senko/senko.hpp`](single_include/senko/senko.hpp) into your project and `#include "senko.hpp"`!
 
 ### Method 3: vcpkg (Manifest Mode)
 
@@ -449,7 +486,7 @@ Add to your `conanfile.txt` or `conanfile.py`:
 
 ```text
 [requires]
-senkojson/2.2.0
+senkojson/2.3.0
 ```
 
 ---
@@ -467,18 +504,20 @@ SenkoJSON/
 │   ├── lexer.hpp                  # Fast zero-copy token scanner
 │   ├── parser.hpp                 # Single-pass streaming recursive descent parser
 │   ├── serializer.hpp             # High-speed direct stringifier
-│   ├── json_pointer.hpp           # RFC 6901 JSON Pointer implementation
+│   ├── json_pointer.hpp           # RFC 6901 Pointer, flatten & unflatten
 │   ├── jsonpath.hpp               # RFC 9535 JSONPath query engine
-│   ├── patch.hpp                  # RFC 6902 JSON Patch & Diff engine
+│   ├── patch.hpp                  # RFC 6902 Patch/Diff & RFC 7396 Merge Patch
+│   ├── schema.hpp                 # JSON Schema Draft-07 validator
+│   ├── sax.hpp                    # Event-driven streaming SAX parser
 │   ├── binary/
 │   │   ├── msgpack.hpp            # MessagePack binary encoder/decoder
 │   │   └── cbor.hpp               # CBOR (RFC 8949) binary encoder/decoder
 │   ├── macro.hpp                  # Struct reflection macros
 │   └── senko.hpp                  # Master header
-├── single_include/senko/          # Standalone single-header distribution
+├── single_include/senko/          # Standalone single-header distribution (~120 KB)
 │   └── senko.hpp
-├── examples/                      # Interactive code examples (01 - 06)
-├── tests/                         # Comprehensive unit test suite (30 test cases)
+├── examples/                      # Interactive code examples (01 - 09)
+├── tests/                         # Comprehensive unit test suite (45 test cases)
 ├── benchmarks/                    # Latency & throughput benchmark suite
 ├── scripts/amalgamate.py          # Header amalgamation script
 ├── CMakeLists.txt                 # Modern CMake build system
@@ -499,7 +538,7 @@ ctest --test-dir build --output-on-failure
 
 # Run benchmarks
 cmake --build build --target senko_benchmarks
-./build/senko_benchmarks
+./build/Release/senko_benchmarks
 ```
 
 ---

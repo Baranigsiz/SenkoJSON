@@ -160,4 +160,121 @@ inline const value& value::operator[](const json_pointer& ptr) const {
     return ptr.resolve(*this);
 }
 
+namespace detail {
+inline void flatten_recursive(const value& current, const std::string& current_path, value& result) {
+    if (current.is_object()) {
+        if (current.empty()) {
+            result[current_path] = value::object();
+        } else {
+            for (const auto& [k, v] : current.get_ref_object()) {
+                std::string next_path = current_path + "/" + json_pointer::escape(k);
+                flatten_recursive(v, next_path, result);
+            }
+        }
+    } else if (current.is_array()) {
+        if (current.empty()) {
+            result[current_path] = value::array();
+        } else {
+            for (size_t i = 0; i < current.size(); ++i) {
+                std::string next_path = current_path + "/" + std::to_string(i);
+                flatten_recursive(current[i], next_path, result);
+            }
+        }
+    } else {
+        result[current_path] = current;
+    }
+}
+} // namespace detail
+
+inline value value::flatten() const {
+    value result = value::object();
+    if (is_null() || is_boolean() || is_number() || is_string()) {
+        result[""] = *this;
+        return result;
+    }
+    if ((is_object() || is_array()) && empty()) {
+        return value::object();
+    }
+    detail::flatten_recursive(*this, "", result);
+    return result;
+}
+
+inline value value::unflatten() const {
+    if (!is_object()) {
+        throw type_error("unflatten() requires an object with JSON Pointer keys");
+    }
+    if (empty()) {
+        return value::object();
+    }
+
+    // Check if it's a root primitive
+    if (contains("")) {
+        return at("");
+    }
+
+    value result;
+    bool is_root_array = false;
+
+    // First check if all root tokens are numbers
+    bool first = true;
+    for (const auto& [k, v] : get_ref_object()) {
+        json_pointer ptr(k);
+        if (!ptr.tokens().empty()) {
+            const std::string& first_tok = ptr.tokens()[0];
+            bool is_num = !first_tok.empty() && std::all_of(first_tok.begin(), first_tok.end(), [](char c){ return std::isdigit(static_cast<unsigned char>(c)); });
+            if (first) {
+                is_root_array = is_num;
+                first = false;
+            }
+        }
+    }
+
+    result = is_root_array ? value::array() : value::object();
+
+    for (const auto& [k, v] : get_ref_object()) {
+        json_pointer ptr(k);
+        const auto& tokens = ptr.tokens();
+        if (tokens.empty()) continue;
+
+        value* cur = &result;
+        for (size_t i = 0; i < tokens.size(); ++i) {
+            const std::string& tok = tokens[i];
+            bool is_last = (i + 1 == tokens.size());
+            bool next_is_num = false;
+            if (!is_last) {
+                const std::string& next_tok = tokens[i + 1];
+                next_is_num = !next_tok.empty() && std::all_of(next_tok.begin(), next_tok.end(), [](char c){ return std::isdigit(static_cast<unsigned char>(c)); });
+            }
+
+            if (cur->is_object()) {
+                if (is_last) {
+                    (*cur)[tok] = v;
+                } else {
+                    if (!cur->contains(tok)) {
+                        (*cur)[tok] = next_is_num ? value::array() : value::object();
+                    }
+                    cur = &(*cur)[tok];
+                }
+            } else if (cur->is_array()) {
+                size_t idx = std::stoull(tok);
+                if (idx >= cur->size()) {
+                    while (cur->size() <= idx) {
+                        cur->push_back(value(nullptr));
+                    }
+                }
+                if (is_last) {
+                    (*cur)[idx] = v;
+                } else {
+                    if ((*cur)[idx].is_null()) {
+                        (*cur)[idx] = next_is_num ? value::array() : value::object();
+                    }
+                    cur = &(*cur)[idx];
+                }
+            }
+        }
+    }
+
+    return result;
+}
+
 } // namespace senko

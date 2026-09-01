@@ -72,4 +72,36 @@ TEST_CASE("JSON Pointer - Error Handling") {
 
     // Non-integer index into array
     CHECK_THROWS(doc["/a/b/invalid"_json_pointer]);
+
+    // Safe fallback value_or() with JSON Pointer
+    CHECK_EQ(doc.value_or("/a/b/0"_json_pointer, 0), 10);
+    CHECK_EQ(doc.value_or("/a/b/99"_json_pointer, 999), 999);
+    CHECK_EQ(doc.value_or("/missing/key"_json_pointer, std::string("default")), "default");
 }
+
+TEST_CASE("JSON Pointer - Flatten and Unflatten") {
+    json original = R"({
+        "name": "Senko",
+        "age": 500,
+        "location": {
+            "country": "Japan",
+            "city": "Tokyo"
+        },
+        "items": ["tea", "rice"]
+    })"_json;
+
+    // 1. Flatten
+    json flat = original.flatten();
+    CHECK(flat.is_object());
+    CHECK_EQ(flat["/name"].get<std::string>(), "Senko");
+    CHECK_EQ(flat["/age"].get<int>(), 500);
+    CHECK_EQ(flat["/location/country"].get<std::string>(), "Japan");
+    CHECK_EQ(flat["/location/city"].get<std::string>(), "Tokyo");
+    CHECK_EQ(flat["/items/0"].get<std::string>(), "tea");
+    CHECK_EQ(flat["/items/1"].get<std::string>(), "rice");
+
+    // 2. Unflatten (Roundtrip)
+    json restored = flat.unflatten();
+    CHECK_EQ(restored, original);
+}
+

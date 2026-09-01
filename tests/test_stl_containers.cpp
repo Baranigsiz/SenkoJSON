@@ -108,3 +108,22 @@ TEST_CASE("STL - std::pair Serialization") {
     CHECK_EQ(restored_pair.first, "score");
     CHECK_EQ(restored_pair.second, 99);
 }
+
+TEST_CASE("STL - std::hash & std::unordered_set / unordered_map") {
+    std::unordered_set<json> json_set;
+    json_set.insert(10);
+    json_set.insert("hello");
+    json_set.insert(json{{"key", "val"}});
+
+    CHECK_EQ(json_set.size(), 3);
+    CHECK(json_set.count(10) > 0);
+    CHECK(json_set.count("hello") > 0);
+    CHECK(json_set.count(json{{"key", "val"}}) > 0);
+    CHECK(json_set.count(20) == 0);
+
+    std::unordered_map<json, std::string> json_map;
+    json key1 = json{{"id", 1}};
+    json_map[key1] = "User One";
+    CHECK_EQ(json_map[key1], "User One");
+}
+

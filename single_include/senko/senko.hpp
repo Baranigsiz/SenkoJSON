@@ -726,11 +726,50 @@ public:
     static value parse(std::istream& is, bool allow_comments = false, bool allow_trailing_comma = false);
     static value parse_file(const std::string& filepath, bool allow_comments = false, bool allow_trailing_comma = false);
 
+    // Hash computation for std::unordered_map and std::unordered_set
+    size_t hash() const noexcept {
+        size_t h = std::hash<size_t>{}(static_cast<size_t>(type()));
+        switch (type()) {
+            case value_t::null: break;
+            case value_t::boolean: h ^= std::hash<bool>{}(get<bool>()) + 0x9e3779b9 + (h << 6) + (h >> 2); break;
+            case value_t::number_integer: h ^= std::hash<int64_t>{}(get<int64_t>()) + 0x9e3779b9 + (h << 6) + (h >> 2); break;
+            case value_t::number_unsigned: h ^= std::hash<uint64_t>{}(get<uint64_t>()) + 0x9e3779b9 + (h << 6) + (h >> 2); break;
+            case value_t::number_float: h ^= std::hash<double>{}(get<double>()) + 0x9e3779b9 + (h << 6) + (h >> 2); break;
+            case value_t::string: h ^= std::hash<std::string>{}(get_ref_string()) + 0x9e3779b9 + (h << 6) + (h >> 2); break;
+            case value_t::array: {
+                for (const auto& item : get_ref_array()) {
+                    h ^= item.hash() + 0x9e3779b9 + (h << 6) + (h >> 2);
+                }
+                break;
+            }
+            case value_t::object: {
+                for (const auto& [k, v] : get_ref_object()) {
+                    h ^= std::hash<std::string>{}(k) + 0x9e3779b9 + (h << 6) + (h >> 2);
+                    h ^= v.hash() + 0x9e3779b9 + (h << 6) + (h >> 2);
+                }
+                break;
+            }
+        }
+        return h;
+    }
+
     // JSON Pointer support declarations
     value& at_ptr(const json_pointer& ptr);
     const value& at_ptr(const json_pointer& ptr) const;
     value& operator[](const json_pointer& ptr);
     const value& operator[](const json_pointer& ptr) const;
+
+    template <typename T>
+    T value_or(const json_pointer& ptr, const T& default_val) const {
+        try {
+            return at_ptr(ptr).get<T>();
+        } catch (...) {
+            return default_val;
+        }
+    }
+
+    value flatten() const;
+    value unflatten() const;
 
     // JSONPath support declarations
     std::vector<value> jsonpath(std::string_view query) const;
@@ -749,6 +788,19 @@ public:
     // JSON Schema Validation declaration
     bool validate(const value& schema_doc, std::string* error_out = nullptr) const;
 };
+
+} // namespace senko
+
+namespace std {
+template <>
+struct hash<senko::value> {
+    size_t operator()(const senko::value& v) const noexcept {
+        return v.hash();
+    }
+};
+}
+
+namespace senko {
 
 // Stream operator for output
 std::ostream& operator<<(std::ostream& os, const value& j);
@@ -2044,6 +2096,123 @@ inline value& value::operator[](const json_pointer& ptr) {
 
 inline const value& value::operator[](const json_pointer& ptr) const {
     return ptr.resolve(*this);
+}
+
+namespace detail {
+inline void flatten_recursive(const value& current, const std::string& current_path, value& result) {
+    if (current.is_object()) {
+        if (current.empty()) {
+            result[current_path] = value::object();
+        } else {
+            for (const auto& [k, v] : current.get_ref_object()) {
+                std::string next_path = current_path + "/" + json_pointer::escape(k);
+                flatten_recursive(v, next_path, result);
+            }
+        }
+    } else if (current.is_array()) {
+        if (current.empty()) {
+            result[current_path] = value::array();
+        } else {
+            for (size_t i = 0; i < current.size(); ++i) {
+                std::string next_path = current_path + "/" + std::to_string(i);
+                flatten_recursive(current[i], next_path, result);
+            }
+        }
+    } else {
+        result[current_path] = current;
+    }
+}
+} // namespace detail
+
+inline value value::flatten() const {
+    value result = value::object();
+    if (is_null() || is_boolean() || is_number() || is_string()) {
+        result[""] = *this;
+        return result;
+    }
+    if ((is_object() || is_array()) && empty()) {
+        return value::object();
+    }
+    detail::flatten_recursive(*this, "", result);
+    return result;
+}
+
+inline value value::unflatten() const {
+    if (!is_object()) {
+        throw type_error("unflatten() requires an object with JSON Pointer keys");
+    }
+    if (empty()) {
+        return value::object();
+    }
+
+    // Check if it's a root primitive
+    if (contains("")) {
+        return at("");
+    }
+
+    value result;
+    bool is_root_array = false;
+
+    // First check if all root tokens are numbers
+    bool first = true;
+    for (const auto& [k, v] : get_ref_object()) {
+        json_pointer ptr(k);
+        if (!ptr.tokens().empty()) {
+            const std::string& first_tok = ptr.tokens()[0];
+            bool is_num = !first_tok.empty() && std::all_of(first_tok.begin(), first_tok.end(), [](char c){ return std::isdigit(static_cast<unsigned char>(c)); });
+            if (first) {
+                is_root_array = is_num;
+                first = false;
+            }
+        }
+    }
+
+    result = is_root_array ? value::array() : value::object();
+
+    for (const auto& [k, v] : get_ref_object()) {
+        json_pointer ptr(k);
+        const auto& tokens = ptr.tokens();
+        if (tokens.empty()) continue;
+
+        value* cur = &result;
+        for (size_t i = 0; i < tokens.size(); ++i) {
+            const std::string& tok = tokens[i];
+            bool is_last = (i + 1 == tokens.size());
+            bool next_is_num = false;
+            if (!is_last) {
+                const std::string& next_tok = tokens[i + 1];
+                next_is_num = !next_tok.empty() && std::all_of(next_tok.begin(), next_tok.end(), [](char c){ return std::isdigit(static_cast<unsigned char>(c)); });
+            }
+
+            if (cur->is_object()) {
+                if (is_last) {
+                    (*cur)[tok] = v;
+                } else {
+                    if (!cur->contains(tok)) {
+                        (*cur)[tok] = next_is_num ? value::array() : value::object();
+                    }
+                    cur = &(*cur)[tok];
+                }
+            } else if (cur->is_array()) {
+                size_t idx = std::stoull(tok);
+                if (idx >= cur->size()) {
+                    while (cur->size() <= idx) {
+                        cur->push_back(value(nullptr));
+                    }
+                }
+                if (is_last) {
+                    (*cur)[idx] = v;
+                } else {
+                    if ((*cur)[idx].is_null()) {
+                        (*cur)[idx] = next_is_num ? value::array() : value::object();
+                    }
+                    cur = &(*cur)[idx];
+                }
+            }
+        }
+    }
+
+    return result;
 }
 
 } // namespace senko

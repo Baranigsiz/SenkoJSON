@@ -552,11 +552,50 @@ public:
     static value parse(std::istream& is, bool allow_comments = false, bool allow_trailing_comma = false);
     static value parse_file(const std::string& filepath, bool allow_comments = false, bool allow_trailing_comma = false);
 
+    // Hash computation for std::unordered_map and std::unordered_set
+    size_t hash() const noexcept {
+        size_t h = std::hash<size_t>{}(static_cast<size_t>(type()));
+        switch (type()) {
+            case value_t::null: break;
+            case value_t::boolean: h ^= std::hash<bool>{}(get<bool>()) + 0x9e3779b9 + (h << 6) + (h >> 2); break;
+            case value_t::number_integer: h ^= std::hash<int64_t>{}(get<int64_t>()) + 0x9e3779b9 + (h << 6) + (h >> 2); break;
+            case value_t::number_unsigned: h ^= std::hash<uint64_t>{}(get<uint64_t>()) + 0x9e3779b9 + (h << 6) + (h >> 2); break;
+            case value_t::number_float: h ^= std::hash<double>{}(get<double>()) + 0x9e3779b9 + (h << 6) + (h >> 2); break;
+            case value_t::string: h ^= std::hash<std::string>{}(get_ref_string()) + 0x9e3779b9 + (h << 6) + (h >> 2); break;
+            case value_t::array: {
+                for (const auto& item : get_ref_array()) {
+                    h ^= item.hash() + 0x9e3779b9 + (h << 6) + (h >> 2);
+                }
+                break;
+            }
+            case value_t::object: {
+                for (const auto& [k, v] : get_ref_object()) {
+                    h ^= std::hash<std::string>{}(k) + 0x9e3779b9 + (h << 6) + (h >> 2);
+                    h ^= v.hash() + 0x9e3779b9 + (h << 6) + (h >> 2);
+                }
+                break;
+            }
+        }
+        return h;
+    }
+
     // JSON Pointer support declarations
     value& at_ptr(const json_pointer& ptr);
     const value& at_ptr(const json_pointer& ptr) const;
     value& operator[](const json_pointer& ptr);
     const value& operator[](const json_pointer& ptr) const;
+
+    template <typename T>
+    T value_or(const json_pointer& ptr, const T& default_val) const {
+        try {
+            return at_ptr(ptr).get<T>();
+        } catch (...) {
+            return default_val;
+        }
+    }
+
+    value flatten() const;
+    value unflatten() const;
 
     // JSONPath support declarations
     std::vector<value> jsonpath(std::string_view query) const;
@@ -575,6 +614,19 @@ public:
     // JSON Schema Validation declaration
     bool validate(const value& schema_doc, std::string* error_out = nullptr) const;
 };
+
+} // namespace senko
+
+namespace std {
+template <>
+struct hash<senko::value> {
+    size_t operator()(const senko::value& v) const noexcept {
+        return v.hash();
+    }
+};
+}
+
+namespace senko {
 
 // Stream operator for output
 std::ostream& operator<<(std::ostream& os, const value& j);
