@@ -11,6 +11,7 @@
 #include <charconv>
 #include <sstream>
 #include <limits>
+#include <cstring>
 
 namespace senko {
 
