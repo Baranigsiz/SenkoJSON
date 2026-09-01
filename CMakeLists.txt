@@ -51,6 +51,9 @@ if(SENKO_BUILD_EXAMPLES)
 
     add_executable(example_05_jsonpath_queries examples/05_jsonpath_queries.cpp)
     target_link_libraries(example_05_jsonpath_queries PRIVATE senko::senko)
+
+    add_executable(example_06_json_patch_and_diff examples/06_json_patch_and_diff.cpp)
+    target_link_libraries(example_06_json_patch_and_diff PRIVATE senko::senko)
 endif()
 
 # ==============================================================================
@@ -67,6 +70,8 @@ if(SENKO_BUILD_TESTS)
         tests/test_errors.cpp
         tests/test_json_pointer.cpp
         tests/test_struct_binding.cpp
+        tests/test_stl_containers.cpp
+        tests/test_patch.cpp
         tests/test_binary.cpp
         tests/test_jsonpath.cpp
     )

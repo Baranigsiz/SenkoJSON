@@ -14,8 +14,9 @@
   <a href="#-key-features">Key Features</a> •
   <a href="#-quick-start">Quick Start</a> •
   <a href="#-binary-json-msgpack--cbor">Binary JSON</a> •
+  <a href="#-json-patch--diff-rfc-6902">JSON Patch</a> •
   <a href="#-jsonpath-rfc-9535">JSONPath</a> •
-  <a href="#-struct-reflection">Struct Reflection</a> •
+  <a href="#-struct-reflection--serialization">Struct Reflection</a> •
   <a href="#-benchmarks">Benchmarks</a> •
   <a href="#-integration">Integration</a> •
   <a href="#-license">License</a>
@@ -35,12 +36,13 @@ Whether you're developing game engines, low-latency microservices, hardware conf
 
 ## ✨ Key Features
 
-- **⚡ Blazing Fast Single-Pass Parser:** Zero-copy token scanning without intermediate heap allocations. Over **1,000,000 parses/sec**.
+- **⚡ Blazing Fast Single-Pass Parser:** Zero-copy token scanning without intermediate heap allocations. Over **1,800,000 parses/sec**.
 - **📦 Single Header & Modular Delivery:** Use either the modular includes (`#include <senko/senko.hpp>`) or drop the single header (`single_include/senko/senko.hpp`) into your project.
+- **🔄 RFC 6902 JSON Patch & Diff:** Calculate deltas with `json::diff(a, b)` and apply patches (`doc.patch(diff)`).
 - **📦 Universal Binary JSON (MessagePack & CBOR):** Serialize and deserialize directly to/from binary buffers (`to_msgpack`, `from_msgpack`, `to_cbor`, `from_cbor`) for 20-50% smaller payloads and wire speed.
 - **🔍 RFC 9535 JSONPath Engine:** SQL-like querying with wildcards (`[*]`), recursive descent (`$..key`), and conditional filters (`[?(@.price < 10)]`).
 - **🎯 RFC 6901 JSON Pointer:** Query and mutate deep nested structures with `/store/book/0/author` syntax.
-- **🧬 Zero-Boilerplate Struct Reflection:** Serialize and deserialize complex nested C++ structs with a single macro: `SENKO_BIND(Type, ...)`.
+- **🧬 Struct Reflection & STL Adapters:** Serialize and deserialize structs (`SENKO_BIND`), `std::optional`, `std::map`, `std::vector`, `std::pair` out-of-the-box.
 - **🧠 Memory-Efficient DOM:** Powered by compact `std::variant` tagged unions—no bloated node structures.
 - **🌐 Full UTF-8 & Surrogate Pairs:** Strict RFC 8259 compliance with UTF-16 surrogate pairs (`\uD83D\uDE00` -> 😀).
 - **🛠️ Permissive Config Mode:** Optional support for C/C++ style comments (`//`, `/* */`) and trailing commas for configuration files.
@@ -199,6 +201,71 @@ int main() {
 
 ---
 
+## 🔄 JSON Patch & Diff (RFC 6902)
+
+Calculate delta patches between documents and apply updates seamlessly:
+
+```cpp
+#include <iostream>
+#include <senko/senko.hpp>
+
+using json = senko::json;
+
+int main() {
+    json original = {
+        {"service", "Payments"},
+        {"version", "1.0.0"},
+        {"endpoints", {"/pay", "/refund"}}
+    };
+
+    json updated = {
+        {"service", "Payments"},
+        {"version", "1.1.0"},
+        {"endpoints", {"/pay", "/refund", "/webhook"}},
+        {"status", "active"}
+    };
+
+    // 1. Calculate delta patch
+    json patch = json::diff(original, updated);
+    std::cout << "Delta Patch:\n" << patch.dump(2) << "\n";
+
+    // 2. Apply patch to update original document in-place
+    original.patch_in_place(patch);
+
+    // original is now identical to updated!
+    return 0;
+}
+```
+
+---
+
+## 📦 Extended STL Types
+
+Out-of-the-box support for `std::optional`, `std::map`, `std::unordered_map`, `std::vector`, `std::pair`, `std::set`:
+
+```cpp
+#include <optional>
+#include <map>
+#include <vector>
+#include <senko/senko.hpp>
+
+struct UserConfig {
+    std::string name;
+    std::optional<std::string> email; // null if std::nullopt
+    std::vector<std::string> tags;
+    std::map<std::string, int> scores;
+};
+SENKO_BIND(UserConfig, name, email, tags, scores)
+
+int main() {
+    UserConfig user{"Baran", std::nullopt, {"cpp", "fast"}, {{"level", 99}}};
+    senko::json j = user; // Automatically serialized!
+    return 0;
+}
+```
+
+---
+
 ## 🎯 JSON Pointer (RFC 6901)
 
 Effortlessly query deep structures:
@@ -263,11 +330,13 @@ SenkoJSON/
 │   ├── fwd.hpp                    # Type traits & forward declarations
 │   ├── error.hpp                  # Rich diagnostic exceptions
 │   ├── value.hpp                  # Compact std::variant DOM
+│   ├── stl_adapters.hpp           # STL containers & std::optional adapters
 │   ├── lexer.hpp                  # Fast zero-copy token scanner
 │   ├── parser.hpp                 # Single-pass streaming recursive descent parser
-│   ├── serializer.hpp             # High-speed stringifier with RFC 8259 escaping
+│   ├── serializer.hpp             # High-speed direct stringifier
 │   ├── json_pointer.hpp           # RFC 6901 JSON Pointer implementation
 │   ├── jsonpath.hpp               # RFC 9535 JSONPath query engine
+│   ├── patch.hpp                  # RFC 6902 JSON Patch & Diff engine
 │   ├── binary/
 │   │   ├── msgpack.hpp            # MessagePack binary encoder/decoder
 │   │   └── cbor.hpp               # CBOR (RFC 8949) binary encoder/decoder
@@ -275,8 +344,8 @@ SenkoJSON/
 │   └── senko.hpp                  # Master header
 ├── single_include/senko/          # Standalone single-header distribution
 │   └── senko.hpp
-├── examples/                      # Interactive code examples
-├── tests/                         # Comprehensive unit test suite (23 test cases)
+├── examples/                      # Interactive code examples (01 - 06)
+├── tests/                         # Comprehensive unit test suite (30 test cases)
 ├── benchmarks/                    # Latency & throughput benchmark suite
 ├── scripts/amalgamate.py          # Header amalgamation script
 ├── CMakeLists.txt                 # Modern CMake build system

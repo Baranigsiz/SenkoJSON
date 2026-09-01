@@ -675,6 +675,11 @@ public:
     // JSONPath support declarations
     std::vector<value> jsonpath(std::string_view query) const;
     value jsonpath_first(std::string_view query) const;
+
+    // JSON Patch (RFC 6902) & Diff declarations
+    value patch(const value& patch_doc) const;
+    void patch_in_place(const value& patch_doc);
+    static value diff(const value& source, const value& target);
 };
 
 // Stream operator for output
@@ -688,6 +693,253 @@ struct adl_serializer {
     }
     static void deserialize(const value& j, T& val) {
         from_json(j, val);
+    }
+};
+
+} // namespace senko
+
+
+// ========================================================
+// Header: stl_adapters.hpp
+// ========================================================
+
+
+
+
+
+
+#include <optional>
+#include <vector>
+#include <deque>
+#include <list>
+#include <set>
+#include <unordered_set>
+#include <map>
+#include <unordered_map>
+#include <utility>
+#include <type_traits>
+
+namespace senko {
+
+// ==========================================
+// std::optional<T> Adapter
+// ==========================================
+template <typename T>
+struct adl_serializer<std::optional<T>> {
+    static void serialize(value& j, const std::optional<T>& opt) {
+        if (opt.has_value()) {
+            j = *opt;
+        } else {
+            j = nullptr;
+        }
+    }
+
+    static void deserialize(const value& j, std::optional<T>& opt) {
+        if (j.is_null()) {
+            opt = std::nullopt;
+        } else {
+            opt = j.get<T>();
+        }
+    }
+};
+
+// ==========================================
+// std::pair<T1, T2> Adapter
+// ==========================================
+template <typename T1, typename T2>
+struct adl_serializer<std::pair<T1, T2>> {
+    static void serialize(value& j, const std::pair<T1, T2>& p) {
+        value::array_t arr;
+        arr.reserve(2);
+        arr.emplace_back(p.first);
+        arr.emplace_back(p.second);
+        j = std::move(arr);
+    }
+
+    static void deserialize(const value& j, std::pair<T1, T2>& p) {
+        if (!j.is_array() || j.size() < 2) {
+            throw type_error("Expected array with at least 2 elements for std::pair, got " + std::string(j.type_name()));
+        }
+        p.first = j[0].get<T1>();
+        p.second = j[1].get<T2>();
+    }
+};
+
+// ==========================================
+// std::vector<T> Adapter (for non-value types)
+// ==========================================
+template <typename T>
+struct adl_serializer<std::vector<T>, std::enable_if_t<!std::is_same_v<T, value>>> {
+    static void serialize(value& j, const std::vector<T>& vec) {
+        value::array_t arr;
+        arr.reserve(vec.size());
+        for (const auto& item : vec) {
+            arr.emplace_back(item);
+        }
+        j = std::move(arr);
+    }
+
+    static void deserialize(const value& j, std::vector<T>& vec) {
+        if (!j.is_array()) {
+            throw type_error("Expected array for std::vector, got " + std::string(j.type_name()));
+        }
+        vec.clear();
+        vec.reserve(j.size());
+        for (size_t i = 0; i < j.size(); ++i) {
+            vec.push_back(j[i].get<T>());
+        }
+    }
+};
+
+// ==========================================
+// std::deque<T> Adapter
+// ==========================================
+template <typename T>
+struct adl_serializer<std::deque<T>> {
+    static void serialize(value& j, const std::deque<T>& deq) {
+        value::array_t arr;
+        arr.reserve(deq.size());
+        for (const auto& item : deq) {
+            arr.emplace_back(item);
+        }
+        j = std::move(arr);
+    }
+
+    static void deserialize(const value& j, std::deque<T>& deq) {
+        if (!j.is_array()) {
+            throw type_error("Expected array for std::deque, got " + std::string(j.type_name()));
+        }
+        deq.clear();
+        for (size_t i = 0; i < j.size(); ++i) {
+            deq.push_back(j[i].get<T>());
+        }
+    }
+};
+
+// ==========================================
+// std::list<T> Adapter
+// ==========================================
+template <typename T>
+struct adl_serializer<std::list<T>> {
+    static void serialize(value& j, const std::list<T>& lst) {
+        value::array_t arr;
+        arr.reserve(lst.size());
+        for (const auto& item : lst) {
+            arr.emplace_back(item);
+        }
+        j = std::move(arr);
+    }
+
+    static void deserialize(const value& j, std::list<T>& lst) {
+        if (!j.is_array()) {
+            throw type_error("Expected array for std::list, got " + std::string(j.type_name()));
+        }
+        lst.clear();
+        for (size_t i = 0; i < j.size(); ++i) {
+            lst.push_back(j[i].get<T>());
+        }
+    }
+};
+
+// ==========================================
+// std::set<T> Adapter
+// ==========================================
+template <typename T>
+struct adl_serializer<std::set<T>> {
+    static void serialize(value& j, const std::set<T>& s) {
+        value::array_t arr;
+        arr.reserve(s.size());
+        for (const auto& item : s) {
+            arr.emplace_back(item);
+        }
+        j = std::move(arr);
+    }
+
+    static void deserialize(const value& j, std::set<T>& s) {
+        if (!j.is_array()) {
+            throw type_error("Expected array for std::set, got " + std::string(j.type_name()));
+        }
+        s.clear();
+        for (size_t i = 0; i < j.size(); ++i) {
+            s.insert(j[i].get<T>());
+        }
+    }
+};
+
+// ==========================================
+// std::unordered_set<T> Adapter
+// ==========================================
+template <typename T>
+struct adl_serializer<std::unordered_set<T>> {
+    static void serialize(value& j, const std::unordered_set<T>& s) {
+        value::array_t arr;
+        arr.reserve(s.size());
+        for (const auto& item : s) {
+            arr.emplace_back(item);
+        }
+        j = std::move(arr);
+    }
+
+    static void deserialize(const value& j, std::unordered_set<T>& s) {
+        if (!j.is_array()) {
+            throw type_error("Expected array for std::unordered_set, got " + std::string(j.type_name()));
+        }
+        s.clear();
+        for (size_t i = 0; i < j.size(); ++i) {
+            s.insert(j[i].get<T>());
+        }
+    }
+};
+
+// ==========================================
+// std::map<std::string, T> Adapter
+// ==========================================
+template <typename T>
+struct adl_serializer<std::map<std::string, T>> {
+    static void serialize(value& j, const std::map<std::string, T>& m) {
+        value::object_t obj;
+        obj.reserve(m.size());
+        for (const auto& [k, v] : m) {
+            obj.emplace_back(k, value(v));
+        }
+        j = std::move(obj);
+    }
+
+    static void deserialize(const value& j, std::map<std::string, T>& m) {
+        if (!j.is_object()) {
+            throw type_error("Expected object for std::map, got " + std::string(j.type_name()));
+        }
+        m.clear();
+        const auto& obj = j.get_ref_object();
+        for (const auto& [k, v] : obj) {
+            m[k] = v.template get<T>();
+        }
+    }
+};
+
+// ==========================================
+// std::unordered_map<std::string, T> Adapter
+// ==========================================
+template <typename T>
+struct adl_serializer<std::unordered_map<std::string, T>> {
+    static void serialize(value& j, const std::unordered_map<std::string, T>& m) {
+        value::object_t obj;
+        obj.reserve(m.size());
+        for (const auto& [k, v] : m) {
+            obj.emplace_back(k, value(v));
+        }
+        j = std::move(obj);
+    }
+
+    static void deserialize(const value& j, std::unordered_map<std::string, T>& m) {
+        if (!j.is_object()) {
+            throw type_error("Expected object for std::unordered_map, got " + std::string(j.type_name()));
+        }
+        m.clear();
+        const auto& obj = j.get_ref_object();
+        for (const auto& [k, v] : obj) {
+            m[k] = v.template get<T>();
+        }
     }
 };
 
@@ -2016,6 +2268,306 @@ inline std::vector<value> evaluate_jsonpath(const value& root, std::string_view 
 
 
 // ========================================================
+// Header: patch.hpp
+// ========================================================
+
+
+
+
+
+
+
+
+#include <string>
+#include <vector>
+#include <utility>
+#include <algorithm>
+
+namespace senko {
+
+/**
+ * @brief Exception thrown when a JSON Patch (RFC 6902) operation fails.
+ */
+class patch_error : public exception {
+public:
+    explicit patch_error(std::string msg)
+        : exception("[senko::patch_error] " + std::move(msg)) {}
+};
+
+/**
+ * @brief Exception thrown when a JSON Patch 'test' assertion operation fails.
+ */
+class patch_test_failed : public patch_error {
+public:
+    explicit patch_test_failed(std::string msg)
+        : patch_error("Test operation failed: " + std::move(msg)) {}
+};
+
+namespace detail {
+
+inline void apply_patch_op(value& doc, const value& op_obj) {
+    if (!op_obj.is_object()) {
+        throw patch_error("Each patch operation must be a JSON object");
+    }
+
+    if (!op_obj.contains("op") || !op_obj.at("op").is_string()) {
+        throw patch_error("Patch operation missing 'op' string property");
+    }
+    if (!op_obj.contains("path") || !op_obj.at("path").is_string()) {
+        throw patch_error("Patch operation missing 'path' string property");
+    }
+
+    std::string op = op_obj.at("op").get<std::string>();
+    std::string path_str = op_obj.at("path").get<std::string>();
+    json_pointer ptr(path_str);
+
+    if (op == "add") {
+        if (!op_obj.contains("value")) {
+            throw patch_error("Operation 'add' requires 'value' property");
+        }
+        const value& val = op_obj.at("value");
+
+        if (ptr.empty()) {
+            doc = val;
+            return;
+        }
+
+        // Navigate to parent
+        json_pointer parent_ptr = ptr;
+        std::string last_token = parent_ptr.tokens().back();
+        parent_ptr.pop_back();
+
+        value& parent = parent_ptr.resolve(doc);
+        if (parent.is_object()) {
+            parent[last_token] = val;
+        } else if (parent.is_array()) {
+            auto& arr = parent.get_ref_array();
+            if (last_token == "-") {
+                arr.push_back(val);
+            } else {
+                size_t idx = 0;
+                try {
+                    idx = std::stoull(last_token);
+                } catch (...) {
+                    throw patch_error("Invalid array index in JSON Patch: '" + last_token + "'");
+                }
+                if (idx > arr.size()) {
+                    throw out_of_range("Array index out of range for add operation: " + std::to_string(idx));
+                }
+                arr.insert(arr.begin() + idx, val);
+            }
+        } else {
+            throw type_error("Cannot add element to primitive JSON value at path: " + parent_ptr.to_string());
+        }
+
+    } else if (op == "remove") {
+        if (ptr.empty()) {
+            throw patch_error("Cannot remove root JSON document");
+        }
+
+        json_pointer parent_ptr = ptr;
+        std::string last_token = parent_ptr.tokens().back();
+        parent_ptr.pop_back();
+
+        value& parent = parent_ptr.resolve(doc);
+        if (parent.is_object()) {
+            if (!parent.contains(last_token)) {
+                throw out_of_range("Key not found for remove operation: '" + last_token + "'");
+            }
+            parent.erase(last_token);
+        } else if (parent.is_array()) {
+            auto& arr = parent.get_ref_array();
+            size_t idx = 0;
+            try {
+                idx = std::stoull(last_token);
+            } catch (...) {
+                throw patch_error("Invalid array index in JSON Patch: '" + last_token + "'");
+            }
+            if (idx >= arr.size()) {
+                throw out_of_range("Array index out of range for remove operation: " + std::to_string(idx));
+            }
+            arr.erase(arr.begin() + idx);
+        } else {
+            throw type_error("Cannot remove element from primitive value at path: " + parent_ptr.to_string());
+        }
+
+    } else if (op == "replace") {
+        if (!op_obj.contains("value")) {
+            throw patch_error("Operation 'replace' requires 'value' property");
+        }
+        const value& val = op_obj.at("value");
+
+        if (ptr.empty()) {
+            doc = val;
+            return;
+        }
+
+        // Must exist before replacing
+        value& target = ptr.resolve(doc);
+        target = val;
+
+    } else if (op == "move") {
+        if (!op_obj.contains("from") || !op_obj.at("from").is_string()) {
+            throw patch_error("Operation 'move' requires 'from' string property");
+        }
+        std::string from_str = op_obj.at("from").get<std::string>();
+        json_pointer from_ptr(from_str);
+
+        if (from_ptr.empty()) {
+            throw patch_error("Cannot move from root JSON document");
+        }
+
+        // Value to move
+        value val = from_ptr.resolve(doc);
+
+        // Remove from source
+        value remove_op = value::object({{"op", "remove"}, {"path", from_str}});
+        apply_patch_op(doc, remove_op);
+
+        // Add to destination
+        value add_op = value::object({{"op", "add"}, {"path", path_str}, {"value", std::move(val)}});
+        apply_patch_op(doc, add_op);
+
+    } else if (op == "copy") {
+        if (!op_obj.contains("from") || !op_obj.at("from").is_string()) {
+            throw patch_error("Operation 'copy' requires 'from' string property");
+        }
+        std::string from_str = op_obj.at("from").get<std::string>();
+        json_pointer from_ptr(from_str);
+
+        value val = from_ptr.resolve(doc);
+
+        value add_op = value::object({{"op", "add"}, {"path", path_str}, {"value", std::move(val)}});
+        apply_patch_op(doc, add_op);
+
+    } else if (op == "test") {
+        if (!op_obj.contains("value")) {
+            throw patch_error("Operation 'test' requires 'value' property");
+        }
+        const value& expected = op_obj.at("value");
+        const value& actual = ptr.resolve(doc);
+
+        if (actual != expected) {
+            throw patch_test_failed("Value at path '" + path_str + "' does not match expected value");
+        }
+
+    } else {
+        throw patch_error("Unsupported JSON Patch operation: '" + op + "'");
+    }
+}
+
+inline void generate_diff_recursive(const value& source, const value& target, const std::string& path, value::array_t& patches) {
+    if (source == target) {
+        return;
+    }
+
+    if (source.is_object() && target.is_object()) {
+        const auto& src_obj = source.get_ref_object();
+        const auto& tgt_obj = target.get_ref_object();
+
+        // Check for removed keys
+        for (const auto& [k, v] : src_obj) {
+            if (!target.contains(k)) {
+                std::string item_path = path + "/" + json_pointer::escape(k);
+                patches.push_back(value::object({
+                    {"op", "remove"},
+                    {"path", item_path}
+                }));
+            }
+        }
+
+        // Check for added or modified keys
+        for (const auto& [k, v] : tgt_obj) {
+            std::string item_path = path + "/" + json_pointer::escape(k);
+            if (!source.contains(k)) {
+                patches.push_back(value::object({
+                    {"op", "add"},
+                    {"path", item_path},
+                    {"value", v}
+                }));
+            } else {
+                generate_diff_recursive(source.at(k), v, item_path, patches);
+            }
+        }
+    } else if (source.is_array() && target.is_array()) {
+        const auto& src_arr = source.get_ref_array();
+        const auto& tgt_arr = target.get_ref_array();
+        size_t min_len = (std::min)(src_arr.size(), tgt_arr.size());
+
+        // Diffs in common indices
+        for (size_t i = 0; i < min_len; ++i) {
+            std::string item_path = path + "/" + std::to_string(i);
+            generate_diff_recursive(src_arr[i], tgt_arr[i], item_path, patches);
+        }
+
+        // Extra elements in target (add)
+        for (size_t i = min_len; i < tgt_arr.size(); ++i) {
+            patches.push_back(value::object({
+                {"op", "add"},
+                {"path", path + "/-"},
+                {"value", tgt_arr[i]}
+            }));
+        }
+
+        // Extra elements in source (remove in reverse order)
+        for (size_t i = src_arr.size(); i > min_len; --i) {
+            patches.push_back(value::object({
+                {"op", "remove"},
+                {"path", path + "/" + std::to_string(i - 1)}
+            }));
+        }
+    } else {
+        // Types or primitives differ -> replace
+        patches.push_back(value::object({
+            {"op", "replace"},
+            {"path", path.empty() ? "" : path},
+            {"value", target}
+        }));
+    }
+}
+
+} // namespace detail
+
+/**
+ * @brief Applies an RFC 6902 JSON Patch document to the given JSON value in-place.
+ */
+inline void apply_patch(value& doc, const value& patch_doc) {
+    if (!patch_doc.is_array()) {
+        throw patch_error("JSON Patch document must be an array of operation objects");
+    }
+    for (size_t i = 0; i < patch_doc.size(); ++i) {
+        detail::apply_patch_op(doc, patch_doc[i]);
+    }
+}
+
+/**
+ * @brief Computes the RFC 6902 JSON Patch that transforms `source` into `target`.
+ */
+inline value diff(const value& source, const value& target) {
+    value::array_t patches;
+    detail::generate_diff_recursive(source, target, "", patches);
+    return value(std::move(patches));
+}
+
+// Inline member methods for value
+inline value value::patch(const value& patch_doc) const {
+    value copy = *this;
+    apply_patch(copy, patch_doc);
+    return copy;
+}
+
+inline void value::patch_in_place(const value& patch_doc) {
+    apply_patch(*this, patch_doc);
+}
+
+inline value value::diff(const value& source, const value& target) {
+    return senko::diff(source, target);
+}
+
+} // namespace senko
+
+
+// ========================================================
 // Header: binary/msgpack.hpp
 // ========================================================
 
@@ -2712,28 +3264,39 @@ namespace senko {
 #define SENKO_CONCAT(x, y) SENKO_CONCAT_(x, y)
 #define SENKO_CONCAT_(x, y) x##y
 
-// Per-count macro expansions
 #define SENKO_TO_1(v, a) SENKO_TO_JSON(v, a)
-#define SENKO_TO_2(v, a, b) SENKO_TO_1(v, a) SENKO_TO_JSON(v, b)
-#define SENKO_TO_3(v, a, b, c) SENKO_TO_2(v, a, b) SENKO_TO_JSON(v, c)
-#define SENKO_TO_4(v, a, b, c, d) SENKO_TO_3(v, a, b, c) SENKO_TO_JSON(v, d)
-#define SENKO_TO_5(v, a, b, c, d, e) SENKO_TO_4(v, a, b, c, d) SENKO_TO_JSON(v, e)
-#define SENKO_TO_6(v, a, b, c, d, e, f) SENKO_TO_5(v, a, b, c, d, e) SENKO_TO_JSON(v, f)
-#define SENKO_TO_7(v, a, b, c, d, e, f, g) SENKO_TO_6(v, a, b, c, d, e, f) SENKO_TO_JSON(v, g)
-#define SENKO_TO_8(v, a, b, c, d, e, f, g, h) SENKO_TO_7(v, a, b, c, d, e, f, g) SENKO_TO_JSON(v, h)
-#define SENKO_TO_9(v, a, b, c, d, e, f, g, h, i) SENKO_TO_8(v, a, b, c, d, e, f, g, h) SENKO_TO_JSON(v, i)
-#define SENKO_TO_10(v, a, b, c, d, e, f, g, h, i, j) SENKO_TO_9(v, a, b, c, d, e, f, g, h, i) SENKO_TO_JSON(v, j)
+#define SENKO_TO_2(v, a, b) SENKO_TO_JSON(v, a) SENKO_TO_JSON(v, b)
+#define SENKO_TO_3(v, a, b, c) SENKO_TO_JSON(v, a) SENKO_TO_JSON(v, b) SENKO_TO_JSON(v, c)
+#define SENKO_TO_4(v, a, b, c, d) SENKO_TO_JSON(v, a) SENKO_TO_JSON(v, b) SENKO_TO_JSON(v, c) SENKO_TO_JSON(v, d)
+#define SENKO_TO_5(v, a, b, c, d, e) SENKO_TO_JSON(v, a) SENKO_TO_JSON(v, b) SENKO_TO_JSON(v, c) SENKO_TO_JSON(v, d) SENKO_TO_JSON(v, e)
+#define SENKO_TO_6(v, a, b, c, d, e, f) SENKO_TO_JSON(v, a) SENKO_TO_JSON(v, b) SENKO_TO_JSON(v, c) SENKO_TO_JSON(v, d) SENKO_TO_JSON(v, e) SENKO_TO_JSON(v, f)
+#define SENKO_TO_7(v, a, b, c, d, e, f, g) SENKO_TO_JSON(v, a) SENKO_TO_JSON(v, b) SENKO_TO_JSON(v, c) SENKO_TO_JSON(v, d) SENKO_TO_JSON(v, e) SENKO_TO_JSON(v, f) SENKO_TO_JSON(v, g)
+#define SENKO_TO_8(v, a, b, c, d, e, f, g, h) SENKO_TO_JSON(v, a) SENKO_TO_JSON(v, b) SENKO_TO_JSON(v, c) SENKO_TO_JSON(v, d) SENKO_TO_JSON(v, e) SENKO_TO_JSON(v, f) SENKO_TO_JSON(v, g) SENKO_TO_JSON(v, h)
+#define SENKO_TO_9(v, a, b, c, d, e, f, g, h, i) SENKO_TO_JSON(v, a) SENKO_TO_JSON(v, b) SENKO_TO_JSON(v, c) SENKO_TO_JSON(v, d) SENKO_TO_JSON(v, e) SENKO_TO_JSON(v, f) SENKO_TO_JSON(v, g) SENKO_TO_JSON(v, h) SENKO_TO_JSON(v, i)
+#define SENKO_TO_10(v, a, b, c, d, e, f, g, h, i, j) SENKO_TO_JSON(v, a) SENKO_TO_JSON(v, b) SENKO_TO_JSON(v, c) SENKO_TO_JSON(v, d) SENKO_TO_JSON(v, e) SENKO_TO_JSON(v, f) SENKO_TO_JSON(v, g) SENKO_TO_JSON(v, h) SENKO_TO_JSON(v, i) SENKO_TO_JSON(v, j)
+#define SENKO_TO_11(v, a, b, c, d, e, f, g, h, i, j, k) SENKO_TO_10(v, a, b, c, d, e, f, g, h, i, j) SENKO_TO_JSON(v, k)
+#define SENKO_TO_12(v, a, b, c, d, e, f, g, h, i, j, k, l) SENKO_TO_11(v, a, b, c, d, e, f, g, h, i, j, k) SENKO_TO_JSON(v, l)
+#define SENKO_TO_13(v, a, b, c, d, e, f, g, h, i, j, k, l, m) SENKO_TO_12(v, a, b, c, d, e, f, g, h, i, j, k, l) SENKO_TO_JSON(v, m)
+#define SENKO_TO_14(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n) SENKO_TO_13(v, a, b, c, d, e, f, g, h, i, j, k, l, m) SENKO_TO_JSON(v, n)
+#define SENKO_TO_15(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o) SENKO_TO_14(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n) SENKO_TO_JSON(v, o)
+#define SENKO_TO_16(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p) SENKO_TO_15(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o) SENKO_TO_JSON(v, p)
 
 #define SENKO_FROM_1(v, a) SENKO_FROM_JSON(v, a)
-#define SENKO_FROM_2(v, a, b) SENKO_FROM_1(v, a) SENKO_FROM_JSON(v, b)
-#define SENKO_FROM_3(v, a, b, c) SENKO_FROM_2(v, a, b) SENKO_FROM_JSON(v, c)
-#define SENKO_FROM_4(v, a, b, c, d) SENKO_FROM_3(v, a, b, c) SENKO_FROM_JSON(v, d)
-#define SENKO_FROM_5(v, a, b, c, d, e) SENKO_FROM_4(v, a, b, c, d, e) SENKO_FROM_JSON(v, e)
-#define SENKO_FROM_6(v, a, b, c, d, e, f) SENKO_FROM_5(v, a, b, c, d, e, f) SENKO_FROM_JSON(v, f)
-#define SENKO_FROM_7(v, a, b, c, d, e, f, g) SENKO_FROM_6(v, a, b, c, d, e, f, g) SENKO_FROM_JSON(v, g)
-#define SENKO_FROM_8(v, a, b, c, d, e, f, g, h) SENKO_FROM_7(v, a, b, c, d, e, f, g) SENKO_FROM_JSON(v, h)
-#define SENKO_FROM_9(v, a, b, c, d, e, f, g, h, i) SENKO_FROM_8(v, a, b, c, d, e, f, g, h, i) SENKO_FROM_JSON(v, i)
-#define SENKO_FROM_10(v, a, b, c, d, e, f, g, h, i, j) SENKO_FROM_9(v, a, b, c, d, e, f, g, h, i) SENKO_FROM_JSON(v, j)
+#define SENKO_FROM_2(v, a, b) SENKO_FROM_JSON(v, a) SENKO_FROM_JSON(v, b)
+#define SENKO_FROM_3(v, a, b, c) SENKO_FROM_JSON(v, a) SENKO_FROM_JSON(v, b) SENKO_FROM_JSON(v, c)
+#define SENKO_FROM_4(v, a, b, c, d) SENKO_FROM_JSON(v, a) SENKO_FROM_JSON(v, b) SENKO_FROM_JSON(v, c) SENKO_FROM_JSON(v, d)
+#define SENKO_FROM_5(v, a, b, c, d, e) SENKO_FROM_JSON(v, a) SENKO_FROM_JSON(v, b) SENKO_FROM_JSON(v, c) SENKO_FROM_JSON(v, d) SENKO_FROM_JSON(v, e)
+#define SENKO_FROM_6(v, a, b, c, d, e, f) SENKO_FROM_JSON(v, a) SENKO_FROM_JSON(v, b) SENKO_FROM_JSON(v, c) SENKO_FROM_JSON(v, d) SENKO_FROM_JSON(v, e) SENKO_FROM_JSON(v, f)
+#define SENKO_FROM_7(v, a, b, c, d, e, f, g) SENKO_FROM_JSON(v, a) SENKO_FROM_JSON(v, b) SENKO_FROM_JSON(v, c) SENKO_FROM_JSON(v, d) SENKO_FROM_JSON(v, e) SENKO_FROM_JSON(v, f) SENKO_FROM_JSON(v, g)
+#define SENKO_FROM_8(v, a, b, c, d, e, f, g, h) SENKO_FROM_JSON(v, a) SENKO_FROM_JSON(v, b) SENKO_FROM_JSON(v, c) SENKO_FROM_JSON(v, d) SENKO_FROM_JSON(v, e) SENKO_FROM_JSON(v, f) SENKO_FROM_JSON(v, g) SENKO_FROM_JSON(v, h)
+#define SENKO_FROM_9(v, a, b, c, d, e, f, g, h, i) SENKO_FROM_JSON(v, a) SENKO_FROM_JSON(v, b) SENKO_FROM_JSON(v, c) SENKO_FROM_JSON(v, d) SENKO_FROM_JSON(v, e) SENKO_FROM_JSON(v, f) SENKO_FROM_JSON(v, g) SENKO_FROM_JSON(v, h) SENKO_FROM_JSON(v, i)
+#define SENKO_FROM_10(v, a, b, c, d, e, f, g, h, i, j) SENKO_FROM_JSON(v, a) SENKO_FROM_JSON(v, b) SENKO_FROM_JSON(v, c) SENKO_FROM_JSON(v, d) SENKO_FROM_JSON(v, e) SENKO_FROM_JSON(v, f) SENKO_FROM_JSON(v, g) SENKO_FROM_JSON(v, h) SENKO_FROM_JSON(v, i) SENKO_FROM_JSON(v, j)
+#define SENKO_FROM_11(v, a, b, c, d, e, f, g, h, i, j, k) SENKO_FROM_10(v, a, b, c, d, e, f, g, h, i, j) SENKO_FROM_JSON(v, k)
+#define SENKO_FROM_12(v, a, b, c, d, e, f, g, h, i, j, k, l) SENKO_FROM_11(v, a, b, c, d, e, f, g, h, i, j, k) SENKO_FROM_JSON(v, l)
+#define SENKO_FROM_13(v, a, b, c, d, e, f, g, h, i, j, k, l, m) SENKO_FROM_12(v, a, b, c, d, e, f, g, h, i, j, k, l) SENKO_FROM_JSON(v, m)
+#define SENKO_FROM_14(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n) SENKO_FROM_13(v, a, b, c, d, e, f, g, h, i, j, k, l, m) SENKO_FROM_JSON(v, n)
+#define SENKO_FROM_15(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o) SENKO_FROM_14(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n) SENKO_FROM_JSON(v, o)
+#define SENKO_FROM_16(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p) SENKO_FROM_15(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o) SENKO_FROM_JSON(v, p)
 
 /**
  * @brief Macro to define struct/class serialization & deserialization functions.

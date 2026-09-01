@@ -11,11 +11,13 @@ HEADERS_ORDER = [
     "fwd.hpp",
     "error.hpp",
     "value.hpp",
+    "stl_adapters.hpp",
     "lexer.hpp",
     "parser.hpp",
     "serializer.hpp",
     "json_pointer.hpp",
     "jsonpath.hpp",
+    "patch.hpp",
     "binary/msgpack.hpp",
     "binary/cbor.hpp",
     "macro.hpp"

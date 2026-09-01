@@ -505,6 +505,11 @@ public:
     // JSONPath support declarations
     std::vector<value> jsonpath(std::string_view query) const;
     value jsonpath_first(std::string_view query) const;
+
+    // JSON Patch (RFC 6902) & Diff declarations
+    value patch(const value& patch_doc) const;
+    void patch_in_place(const value& patch_doc);
+    static value diff(const value& source, const value& target);
 };
 
 // Stream operator for output
