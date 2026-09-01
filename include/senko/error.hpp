@@ -24,6 +24,10 @@ protected:
  */
 class parse_error : public exception {
 public:
+    explicit parse_error(std::string msg)
+        : exception("[senko::parse_error] " + std::move(msg)),
+          m_line(0), m_column(0), m_byte_offset(0) {}
+
     parse_error(std::string_view raw_msg, size_t line, size_t col, size_t byte_offset, std::string_view context_snippet = {})
         : exception(format_message(raw_msg, line, col, byte_offset, context_snippet)),
           m_line(line), m_column(col), m_byte_offset(byte_offset) {}

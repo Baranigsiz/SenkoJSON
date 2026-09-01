@@ -7,6 +7,7 @@
 
 #include <string_view>
 #include <istream>
+#include <fstream>
 #include <sstream>
 
 namespace senko {
@@ -176,6 +177,14 @@ inline value value::parse(std::string_view input, bool allow_comments, bool allo
 inline value value::parse(std::istream& is, bool allow_comments, bool allow_trailing_comma) {
     std::string str((std::istreambuf_iterator<char>(is)), std::istreambuf_iterator<char>());
     return parse(str, allow_comments, allow_trailing_comma);
+}
+
+inline value value::parse_file(const std::string& filepath, bool allow_comments, bool allow_trailing_comma) {
+    std::ifstream file(filepath, std::ios::in | std::ios::binary);
+    if (!file.is_open()) {
+        throw parse_error("Failed to open file: " + filepath);
+    }
+    return parse(file, allow_comments, allow_trailing_comma);
 }
 
 } // namespace senko

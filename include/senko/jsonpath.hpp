@@ -10,6 +10,7 @@
 #include <sstream>
 #include <functional>
 #include <cctype>
+#include <algorithm>
 
 namespace senko {
 
@@ -21,13 +22,22 @@ public:
 namespace detail {
 
 enum class segment_type {
-    root,           // $
-    child_key,      // .key or ['key']
-    child_wildcard, // .* or [*]
-    array_index,    // [0], [-1]
-    descendant_key, // ..key
-    descendant_wildcard, // ..*
-    filter          // [?(@.field == val)]
+    root,               // $
+    child_key,          // .key or ['key']
+    child_wildcard,     // .* or [*]
+    array_index,        // [0], [-1]
+    array_slice,        // [start:end:step]
+    descendant_key,     // ..key
+    descendant_wildcard,// ..*
+    filter              // [?(@.field == val)]
+};
+
+struct slice_params {
+    bool has_start = false;
+    int start = 0;
+    bool has_end = false;
+    int end = 0;
+    int step = 1;
 };
 
 struct filter_expr {
@@ -68,6 +78,7 @@ struct path_segment {
     segment_type type;
     std::string key;
     int index = 0;
+    slice_params slice;
     filter_expr filter;
 };
 
@@ -88,6 +99,22 @@ inline void collect_descendants(const value& current, std::string_view target_ke
     }
 }
 
+inline void collect_all_descendants(const value& current, std::vector<value>& results) {
+    if (current.is_object()) {
+        const auto& obj = current.get_ref_object();
+        for (const auto& pair : obj) {
+            results.push_back(pair.second);
+            collect_all_descendants(pair.second, results);
+        }
+    } else if (current.is_array()) {
+        const auto& arr = current.get_ref_array();
+        for (const auto& elem : arr) {
+            results.push_back(elem);
+            collect_all_descendants(elem, results);
+        }
+    }
+}
+
 inline std::vector<path_segment> parse_jsonpath(std::string_view expr) {
     std::vector<path_segment> segments;
     size_t i = 0;
@@ -99,7 +126,7 @@ inline std::vector<path_segment> parse_jsonpath(std::string_view expr) {
     if (i >= len || expr[i] != '$') {
         throw jsonpath_error("JSONPath expression must start with '$'");
     }
-    segments.push_back({segment_type::root, "", 0, {}});
+    segments.push_back({segment_type::root, "", 0, {}, {}});
     i++; // skip '$'
 
     while (i < len) {
@@ -109,7 +136,7 @@ inline std::vector<path_segment> parse_jsonpath(std::string_view expr) {
                 // Recursive descent ..
                 i++;
                 if (i < len && expr[i] == '*') {
-                    segments.push_back({segment_type::descendant_wildcard, "", 0, {}});
+                    segments.push_back({segment_type::descendant_wildcard, "", 0, {}, {}});
                     i++;
                 } else {
                     size_t start = i;
@@ -117,10 +144,10 @@ inline std::vector<path_segment> parse_jsonpath(std::string_view expr) {
                         i++;
                     }
                     if (start == i) throw jsonpath_error("Expected key name after '..'");
-                    segments.push_back({segment_type::descendant_key, std::string(expr.substr(start, i - start)), 0, {}});
+                    segments.push_back({segment_type::descendant_key, std::string(expr.substr(start, i - start)), 0, {}, {}});
                 }
             } else if (i < len && expr[i] == '*') {
-                segments.push_back({segment_type::child_wildcard, "", 0, {}});
+                segments.push_back({segment_type::child_wildcard, "", 0, {}, {}});
                 i++;
             } else {
                 size_t start = i;
@@ -128,14 +155,14 @@ inline std::vector<path_segment> parse_jsonpath(std::string_view expr) {
                     i++;
                 }
                 if (start == i) throw jsonpath_error("Expected key name after '.'");
-                segments.push_back({segment_type::child_key, std::string(expr.substr(start, i - start)), 0, {}});
+                segments.push_back({segment_type::child_key, std::string(expr.substr(start, i - start)), 0, {}, {}});
             }
         } else if (expr[i] == '[') {
             i++; // skip '['
             while (i < len && std::isspace(static_cast<unsigned char>(expr[i]))) i++;
 
             if (i < len && expr[i] == '*') {
-                segments.push_back({segment_type::child_wildcard, "", 0, {}});
+                segments.push_back({segment_type::child_wildcard, "", 0, {}, {}});
                 i++;
             } else if (i < len && (expr[i] == '\'' || expr[i] == '"')) {
                 // ['key']
@@ -143,7 +170,7 @@ inline std::vector<path_segment> parse_jsonpath(std::string_view expr) {
                 size_t start = i;
                 while (i < len && expr[i] != quote) i++;
                 if (i >= len) throw jsonpath_error("Unterminated quoted key in bracket notation");
-                segments.push_back({segment_type::child_key, std::string(expr.substr(start, i - start)), 0, {}});
+                segments.push_back({segment_type::child_key, std::string(expr.substr(start, i - start)), 0, {}, {}});
                 i++; // skip closing quote
             } else if (i < len && expr[i] == '?') {
                 // Filter [?(@.price < 10)]
@@ -204,15 +231,72 @@ inline std::vector<path_segment> parse_jsonpath(std::string_view expr) {
                 }
 
                 while (i < len && expr[i] != ']') i++;
-                segments.push_back({segment_type::filter, "", 0, filt});
+                segments.push_back({segment_type::filter, "", 0, {}, filt});
 
             } else {
-                // [index]
-                size_t start = i;
-                if (expr[i] == '-') i++;
-                while (i < len && std::isdigit(static_cast<unsigned char>(expr[i]))) i++;
-                int idx = std::stoi(std::string(expr.substr(start, i - start)));
-                segments.push_back({segment_type::array_index, "", idx, {}});
+                // Check if this is an array slice (contains ':') or a single index
+                size_t close_bracket = expr.find(']', i);
+                if (close_bracket == std::string_view::npos) {
+                    throw jsonpath_error("Missing closing bracket ']' in array subscript");
+                }
+                std::string_view sub = expr.substr(i, close_bracket - i);
+                if (sub.find(':') != std::string_view::npos) {
+                    // Array Slice syntax: [start:end:step]
+                    slice_params sl;
+                    size_t pos = i;
+
+                    // 1. Read start
+                    while (pos < close_bracket && std::isspace(static_cast<unsigned char>(expr[pos]))) pos++;
+                    if (pos < close_bracket && expr[pos] != ':') {
+                        size_t s_start = pos;
+                        if (expr[pos] == '-') pos++;
+                        while (pos < close_bracket && std::isdigit(static_cast<unsigned char>(expr[pos]))) pos++;
+                        sl.start = std::stoi(std::string(expr.substr(s_start, pos - s_start)));
+                        sl.has_start = true;
+                    }
+
+                    while (pos < close_bracket && std::isspace(static_cast<unsigned char>(expr[pos]))) pos++;
+                    if (pos < close_bracket && expr[pos] == ':') {
+                        pos++; // consume first ':'
+                    } else {
+                        throw jsonpath_error("Expected ':' in array slice");
+                    }
+
+                    // 2. Read end
+                    while (pos < close_bracket && std::isspace(static_cast<unsigned char>(expr[pos]))) pos++;
+                    if (pos < close_bracket && expr[pos] != ':' && expr[pos] != ']') {
+                        size_t e_start = pos;
+                        if (expr[pos] == '-') pos++;
+                        while (pos < close_bracket && std::isdigit(static_cast<unsigned char>(expr[pos]))) pos++;
+                        sl.end = std::stoi(std::string(expr.substr(e_start, pos - e_start)));
+                        sl.has_end = true;
+                    }
+
+                    // 3. Read optional step
+                    while (pos < close_bracket && std::isspace(static_cast<unsigned char>(expr[pos]))) pos++;
+                    if (pos < close_bracket && expr[pos] == ':') {
+                        pos++; // consume second ':'
+                        while (pos < close_bracket && std::isspace(static_cast<unsigned char>(expr[pos]))) pos++;
+                        if (pos < close_bracket && expr[pos] != ']') {
+                            size_t st_start = pos;
+                            if (expr[pos] == '-') pos++;
+                            while (pos < close_bracket && std::isdigit(static_cast<unsigned char>(expr[pos]))) pos++;
+                            sl.step = std::stoi(std::string(expr.substr(st_start, pos - st_start)));
+                            if (sl.step == 0) throw jsonpath_error("Step cannot be 0 in array slice");
+                        }
+                    }
+
+                    segments.push_back({segment_type::array_slice, "", 0, sl, {}});
+                    i = close_bracket;
+                } else {
+                    // Single index [index]
+                    size_t start = i;
+                    if (expr[i] == '-') i++;
+                    while (i < len && std::isdigit(static_cast<unsigned char>(expr[i]))) i++;
+                    if (start == i) throw jsonpath_error("Invalid index in array bracket");
+                    int idx = std::stoi(std::string(expr.substr(start, i - start)));
+                    segments.push_back({segment_type::array_index, "", idx, {}, {}});
+                }
             }
 
             while (i < len && expr[i] != ']') i++;
@@ -278,11 +362,50 @@ inline std::vector<value> evaluate_jsonpath(const value& root, std::string_view 
                         }
                     }
                     break;
+                case detail::segment_type::array_slice:
+                    if (item.is_array()) {
+                        const auto& arr = item.get_ref_array();
+                        int n = static_cast<int>(arr.size());
+                        int step = seg.slice.step;
+                        if (step == 0) throw jsonpath_error("Step cannot be 0 in array slice");
+
+                        if (step > 0) {
+                            int s = 0;
+                            if (seg.slice.has_start) {
+                                s = seg.slice.start < 0 ? seg.slice.start + n : seg.slice.start;
+                                s = (std::max)(0, (std::min)(n, s));
+                            }
+                            int e = n;
+                            if (seg.slice.has_end) {
+                                e = seg.slice.end < 0 ? seg.slice.end + n : seg.slice.end;
+                                e = (std::max)(0, (std::min)(n, e));
+                            }
+                            for (int idx = s; idx < e; idx += step) {
+                                next_set.push_back(arr[static_cast<size_t>(idx)]);
+                            }
+                        } else {
+                            // Negative step
+                            int s = n - 1;
+                            if (seg.slice.has_start) {
+                                s = seg.slice.start < 0 ? seg.slice.start + n : seg.slice.start;
+                                s = (std::max)(-1, (std::min)(n - 1, s));
+                            }
+                            int e = -1;
+                            if (seg.slice.has_end) {
+                                e = seg.slice.end < 0 ? seg.slice.end + n : seg.slice.end;
+                                e = (std::max)(-1, (std::min)(n - 1, e));
+                            }
+                            for (int idx = s; idx > e; idx += step) {
+                                next_set.push_back(arr[static_cast<size_t>(idx)]);
+                            }
+                        }
+                    }
+                    break;
                 case detail::segment_type::descendant_key:
                     detail::collect_descendants(item, seg.key, next_set);
                     break;
                 case detail::segment_type::descendant_wildcard:
-                    // Add all children recursively
+                    detail::collect_all_descendants(item, next_set);
                     break;
                 case detail::segment_type::filter:
                     if (item.is_array()) {

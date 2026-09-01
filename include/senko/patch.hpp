@@ -291,4 +291,48 @@ inline value value::diff(const value& source, const value& target) {
     return senko::diff(source, target);
 }
 
+/**
+ * @brief Applies an RFC 7396 JSON Merge Patch to the target JSON document in-place.
+ */
+inline void merge_patch_in_place(value& target, const value& patch_doc) {
+    if (patch_doc.is_object()) {
+        if (!target.is_object()) {
+            target = value::object();
+        }
+        for (const auto& [key, val] : patch_doc.get_ref_object()) {
+            if (val.is_null()) {
+                target.erase(key);
+            } else {
+                if (!target.contains(key)) {
+                    target[key] = nullptr;
+                }
+                merge_patch_in_place(target[key], val);
+            }
+        }
+    } else {
+        target = patch_doc;
+    }
+}
+
+/**
+ * @brief Returns a new JSON value resulting from applying RFC 7396 Merge Patch.
+ */
+inline value merge_patch(const value& target, const value& patch_doc) {
+    value result = target;
+    merge_patch_in_place(result, patch_doc);
+    return result;
+}
+
+inline value value::merge_patch(const value& patch_doc) const {
+    return senko::merge_patch(*this, patch_doc);
+}
+
+inline void value::merge_patch_in_place(const value& patch_doc) {
+    senko::merge_patch_in_place(*this, patch_doc);
+}
+
+inline value value::merge_patch(const value& target, const value& patch_doc) {
+    return senko::merge_patch(target, patch_doc);
+}
+
 } // namespace senko

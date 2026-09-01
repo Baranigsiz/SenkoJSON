@@ -5,6 +5,7 @@
 
 #include <string>
 #include <sstream>
+#include <fstream>
 #include <iomanip>
 #include <cmath>
 #include <limits>
@@ -206,6 +207,15 @@ public:
         return out;
     }
 
+    static void dump_to_file(const value& v, const std::string& filepath, int indent = -1) {
+        std::ofstream file(filepath, std::ios::out | std::ios::binary);
+        if (!file.is_open()) {
+            throw std::runtime_error("[senko::serializer_error] Failed to open file for writing: " + filepath);
+        }
+        std::string s = dump_to_string(v, indent);
+        file.write(s.data(), s.size());
+    }
+
 private:
     std::ostream& m_os;
     int m_indent;
@@ -219,6 +229,10 @@ inline std::string value::dump(int indent) const {
 inline void value::dump(std::ostream& os, int indent) const {
     std::string s = dump(indent);
     os << s;
+}
+
+inline void value::dump_file(const std::string& filepath, int indent) const {
+    serializer::dump_to_file(*this, filepath, indent);
 }
 
 inline std::ostream& operator<<(std::ostream& os, const value& j) {

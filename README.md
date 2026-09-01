@@ -38,11 +38,13 @@ Whether you're developing game engines, low-latency microservices, hardware conf
 
 - **⚡ Blazing Fast Single-Pass Parser:** Zero-copy token scanning without intermediate heap allocations. Over **1,800,000 parses/sec**.
 - **📦 Single Header & Modular Delivery:** Use either the modular includes (`#include <senko/senko.hpp>`) or drop the single header (`single_include/senko/senko.hpp`) into your project.
-- **🔄 RFC 6902 JSON Patch & Diff:** Calculate deltas with `json::diff(a, b)` and apply patches (`doc.patch(diff)`).
+- **🔁 Range-Based Iterators & `.items()`:** Native C++ range-based `for` loops on arrays and structured binding `for (auto& [key, val] : doc.items())` on objects.
+- **📁 One-Liner File I/O:** Directly load and save JSON files via `json::parse_file("config.json")` and `doc.dump_file("out.json", 4)`.
+- **🔄 RFC 6902 Patch & RFC 7396 Merge Patch:** Calculate deltas with `json::diff(a, b)`, apply RFC 6902 patches, and merge updates with `doc.merge_patch(patch)`.
 - **📦 Universal Binary JSON (MessagePack & CBOR):** Serialize and deserialize directly to/from binary buffers (`to_msgpack`, `from_msgpack`, `to_cbor`, `from_cbor`) for 20-50% smaller payloads and wire speed.
-- **🔍 RFC 9535 JSONPath Engine:** SQL-like querying with wildcards (`[*]`), recursive descent (`$..key`), and conditional filters (`[?(@.price < 10)]`).
+- **🔍 RFC 9535 JSONPath Engine:** SQL-like querying with wildcards (`[*]`), recursive descent (`$..key`, `$..*`), array slices (`[0:3]`, `[::2]`), and conditional filters (`[?(@.price < 10)]`).
 - **🎯 RFC 6901 JSON Pointer:** Query and mutate deep nested structures with `/store/book/0/author` syntax.
-- **🧬 Struct Reflection & STL Adapters:** Serialize and deserialize structs (`SENKO_BIND`), `std::optional`, `std::map`, `std::vector`, `std::pair` out-of-the-box.
+- **🧬 Struct Reflection & STL Adapters:** Serialize and deserialize structs with up to 32 fields (`SENKO_BIND`), `std::optional`, `std::map`, `std::vector`, `std::pair` out-of-the-box.
 - **🧠 Memory-Efficient DOM:** Powered by compact `std::variant` tagged unions—no bloated node structures.
 - **🌐 Full UTF-8 & Surrogate Pairs:** Strict RFC 8259 compliance with UTF-16 surrogate pairs (`\uD83D\uDE00` -> 😀).
 - **🛠️ Permissive Config Mode:** Optional support for C/C++ style comments (`//`, `/* */`) and trailing commas for configuration files.
@@ -56,17 +58,17 @@ Whether you're developing game engines, low-latency microservices, hardware conf
 
 | Operation | Payload Size | Latency (us/op) | Throughput (ops/s) | Bandwidth (MB/s) |
 | :--- | :--- | :--- | :--- | :--- |
-| **Parse Small JSON** | 106 Bytes | **0.55 µs** | **1,823,094 ops/s** | **166.91 MB/s** |
-| **Parse Medium JSON** | 630 Bytes | **3.03 µs** | **329,999 ops/s** | **247.05 MB/s** |
-| **Parse Large Numbers Array** | 5,000 Items | **509.88 µs** | **1,961 ops/s** | **110.84 MB/s** |
-| **Dump Minified JSON** | 630 Bytes | **1.65 µs** | **606,342 ops/s** | **453.93 MB/s** |
-| **Dump Pretty JSON (indent 4)** | 630 Bytes | **2.14 µs** | **467,303 ops/s** | **349.84 MB/s** |
+| **Parse Small JSON** | 106 Bytes | **0.53 µs** | **1,885,647 ops/s** | **172.64 MB/s** |
+| **Parse Medium JSON** | 630 Bytes | **2.85 µs** | **350,702 ops/s** | **262.55 MB/s** |
+| **Parse Large Numbers Array** | 5,000 Items | **505.13 µs** | **1,980 ops/s** | **111.88 MB/s** |
+| **Dump Minified JSON** | 630 Bytes | **1.63 µs** | **613,830 ops/s** | **459.53 MB/s** |
+| **Dump Pretty JSON (indent 4)** | 630 Bytes | **2.10 µs** | **476,286 ops/s** | **356.56 MB/s** |
 
 ---
 
 ## 💻 Quick Start
 
-### 1. Basic Parsing & Manipulation
+### 1. Basic Parsing, Iteration & Manipulation
 
 ```cpp
 #include <iostream>
@@ -93,12 +95,19 @@ int main() {
     data["version"] = "2.2.0";
     data["tags"].push_back("zero-allocation");
 
-    // Safe fallback value
-    std::string license = data.value_or("license", std::string("MIT"));
+    // Range-based for on array
+    for (const auto& tag : data["tags"]) {
+        std::cout << "Tag: " << tag.get<std::string>() << "\n";
+    }
 
-    // Serialize (Pretty Print or Minified)
-    std::cout << data.dump(4) << std::endl;  // Formatted
-    std::cout << data.dump(-1) << std::endl; // Minified
+    // Structured binding iteration on object
+    for (auto& [key, val] : data.items()) {
+        std::cout << key << ": " << val.dump() << "\n";
+    }
+
+    // Direct File I/O
+    data.dump_file("config.json", 4);
+    json loaded = json::parse_file("config.json");
 
     return 0;
 }
@@ -152,10 +161,13 @@ json store = json::parse(R"({
 // 1. Wildcard Query: get all titles
 auto titles = store.jsonpath("$.store.book[*].title");
 
-// 2. Recursive Descent: find all authors anywhere in the document
+// 2. Array Slice: get first two books
+auto first_two = store.jsonpath("$.store.book[0:2]");
+
+// 3. Recursive Descent: find all authors anywhere in the document
 auto authors = store.jsonpath("$..author");
 
-// 3. Conditional Filter: find books cheaper than $10
+// 4. Conditional Filter: find books cheaper than $10
 auto cheap_books = store.jsonpath("$.store.book[?(@.price < 10.0)].title");
 ```
 

@@ -98,3 +98,37 @@ TEST_CASE("JSON Diff - RFC 6902 Diff Generation & Re-application") {
     // Verify transformed exactly equals target!
     CHECK_EQ(transformed, target);
 }
+
+TEST_CASE("JSON Merge Patch - RFC 7396 Standard Merge") {
+    // 1. Basic object merge with deletion (null)
+    json original = json::parse(R"({
+        "a": "b",
+        "c": {
+            "d": "e",
+            "f": "g"
+        }
+    })");
+
+    json patch_doc = json::parse(R"({
+        "a": "z",
+        "c": {
+            "f": null
+        }
+    })");
+
+    json merged = original.merge_patch(patch_doc);
+    CHECK_EQ(merged["a"].get<std::string>(), "z");
+    CHECK_EQ(merged["c"]["d"].get<std::string>(), "e");
+    CHECK(!merged["c"].contains("f"));
+
+    // 2. In-place merge patch
+    original.merge_patch_in_place(patch_doc);
+    CHECK_EQ(original, merged);
+
+    // 3. Merge patch with primitive replacement
+    json doc2 = json::parse(R"({"title": "hello", "count": 10})");
+    json patch_primitive = "just_a_string";
+    json res2 = doc2.merge_patch(patch_primitive);
+    CHECK_EQ(res2.get<std::string>(), "just_a_string");
+}
+

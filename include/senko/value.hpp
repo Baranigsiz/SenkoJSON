@@ -468,6 +468,60 @@ public:
     }
 
     // ==========================================
+    // Iterators (Array) & Items Proxy (Object)
+    // ==========================================
+
+    using iterator = array_t::iterator;
+    using const_iterator = array_t::const_iterator;
+
+    iterator begin() {
+        if (!is_array()) throw type_error("Cannot call begin() on non-array type " + std::string(type_name()));
+        return std::get<array_t>(m_data).begin();
+    }
+    iterator end() {
+        if (!is_array()) throw type_error("Cannot call end() on non-array type " + std::string(type_name()));
+        return std::get<array_t>(m_data).end();
+    }
+    const_iterator begin() const {
+        if (!is_array()) throw type_error("Cannot call begin() on non-array type " + std::string(type_name()));
+        return std::get<array_t>(m_data).begin();
+    }
+    const_iterator end() const {
+        if (!is_array()) throw type_error("Cannot call end() on non-array type " + std::string(type_name()));
+        return std::get<array_t>(m_data).end();
+    }
+    const_iterator cbegin() const {
+        return begin();
+    }
+    const_iterator cend() const {
+        return end();
+    }
+
+    struct items_view {
+        object_t& obj;
+        auto begin() noexcept { return obj.begin(); }
+        auto end() noexcept { return obj.end(); }
+    };
+
+    struct const_items_view {
+        const object_t& obj;
+        auto begin() const noexcept { return obj.begin(); }
+        auto end() const noexcept { return obj.end(); }
+        auto cbegin() const noexcept { return obj.cbegin(); }
+        auto cend() const noexcept { return obj.cend(); }
+    };
+
+    items_view items() {
+        if (!is_object()) throw type_error("Cannot call items() on non-object type " + std::string(type_name()));
+        return items_view{std::get<object_t>(m_data)};
+    }
+
+    const_items_view items() const {
+        if (!is_object()) throw type_error("Cannot call items() on non-object type " + std::string(type_name()));
+        return const_items_view{std::get<object_t>(m_data)};
+    }
+
+    // ==========================================
     // Comparisons
     // ==========================================
 
@@ -492,9 +546,11 @@ public:
 
     std::string dump(int indent = -1) const;
     void dump(std::ostream& os, int indent = -1) const;
+    void dump_file(const std::string& filepath, int indent = -1) const;
 
     static value parse(std::string_view input, bool allow_comments = false, bool allow_trailing_comma = false);
     static value parse(std::istream& is, bool allow_comments = false, bool allow_trailing_comma = false);
+    static value parse_file(const std::string& filepath, bool allow_comments = false, bool allow_trailing_comma = false);
 
     // JSON Pointer support declarations
     value& at_ptr(const json_pointer& ptr);
@@ -510,6 +566,11 @@ public:
     value patch(const value& patch_doc) const;
     void patch_in_place(const value& patch_doc);
     static value diff(const value& source, const value& target);
+
+    // JSON Merge Patch (RFC 7396) declarations
+    value merge_patch(const value& patch_doc) const;
+    void merge_patch_in_place(const value& patch_doc);
+    static value merge_patch(const value& target, const value& patch_doc);
 };
 
 // Stream operator for output

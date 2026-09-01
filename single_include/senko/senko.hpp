@@ -109,6 +109,10 @@ protected:
  */
 class parse_error : public exception {
 public:
+    explicit parse_error(std::string msg)
+        : exception("[senko::parse_error] " + std::move(msg)),
+          m_line(0), m_column(0), m_byte_offset(0) {}
+
     parse_error(std::string_view raw_msg, size_t line, size_t col, size_t byte_offset, std::string_view context_snippet = {})
         : exception(format_message(raw_msg, line, col, byte_offset, context_snippet)),
           m_line(line), m_column(col), m_byte_offset(byte_offset) {}
@@ -638,6 +642,60 @@ public:
     }
 
     // ==========================================
+    // Iterators (Array) & Items Proxy (Object)
+    // ==========================================
+
+    using iterator = array_t::iterator;
+    using const_iterator = array_t::const_iterator;
+
+    iterator begin() {
+        if (!is_array()) throw type_error("Cannot call begin() on non-array type " + std::string(type_name()));
+        return std::get<array_t>(m_data).begin();
+    }
+    iterator end() {
+        if (!is_array()) throw type_error("Cannot call end() on non-array type " + std::string(type_name()));
+        return std::get<array_t>(m_data).end();
+    }
+    const_iterator begin() const {
+        if (!is_array()) throw type_error("Cannot call begin() on non-array type " + std::string(type_name()));
+        return std::get<array_t>(m_data).begin();
+    }
+    const_iterator end() const {
+        if (!is_array()) throw type_error("Cannot call end() on non-array type " + std::string(type_name()));
+        return std::get<array_t>(m_data).end();
+    }
+    const_iterator cbegin() const {
+        return begin();
+    }
+    const_iterator cend() const {
+        return end();
+    }
+
+    struct items_view {
+        object_t& obj;
+        auto begin() noexcept { return obj.begin(); }
+        auto end() noexcept { return obj.end(); }
+    };
+
+    struct const_items_view {
+        const object_t& obj;
+        auto begin() const noexcept { return obj.begin(); }
+        auto end() const noexcept { return obj.end(); }
+        auto cbegin() const noexcept { return obj.cbegin(); }
+        auto cend() const noexcept { return obj.cend(); }
+    };
+
+    items_view items() {
+        if (!is_object()) throw type_error("Cannot call items() on non-object type " + std::string(type_name()));
+        return items_view{std::get<object_t>(m_data)};
+    }
+
+    const_items_view items() const {
+        if (!is_object()) throw type_error("Cannot call items() on non-object type " + std::string(type_name()));
+        return const_items_view{std::get<object_t>(m_data)};
+    }
+
+    // ==========================================
     // Comparisons
     // ==========================================
 
@@ -662,9 +720,11 @@ public:
 
     std::string dump(int indent = -1) const;
     void dump(std::ostream& os, int indent = -1) const;
+    void dump_file(const std::string& filepath, int indent = -1) const;
 
     static value parse(std::string_view input, bool allow_comments = false, bool allow_trailing_comma = false);
     static value parse(std::istream& is, bool allow_comments = false, bool allow_trailing_comma = false);
+    static value parse_file(const std::string& filepath, bool allow_comments = false, bool allow_trailing_comma = false);
 
     // JSON Pointer support declarations
     value& at_ptr(const json_pointer& ptr);
@@ -680,6 +740,11 @@ public:
     value patch(const value& patch_doc) const;
     void patch_in_place(const value& patch_doc);
     static value diff(const value& source, const value& target);
+
+    // JSON Merge Patch (RFC 7396) declarations
+    value merge_patch(const value& patch_doc) const;
+    void merge_patch_in_place(const value& patch_doc);
+    static value merge_patch(const value& target, const value& patch_doc);
 };
 
 // Stream operator for output
@@ -1371,6 +1436,7 @@ private:
 
 #include <string_view>
 #include <istream>
+#include <fstream>
 #include <sstream>
 
 namespace senko {
@@ -1542,6 +1608,14 @@ inline value value::parse(std::istream& is, bool allow_comments, bool allow_trai
     return parse(str, allow_comments, allow_trailing_comma);
 }
 
+inline value value::parse_file(const std::string& filepath, bool allow_comments, bool allow_trailing_comma) {
+    std::ifstream file(filepath, std::ios::in | std::ios::binary);
+    if (!file.is_open()) {
+        throw parse_error("Failed to open file: " + filepath);
+    }
+    return parse(file, allow_comments, allow_trailing_comma);
+}
+
 } // namespace senko
 
 
@@ -1556,6 +1630,7 @@ inline value value::parse(std::istream& is, bool allow_comments, bool allow_trai
 
 #include <string>
 #include <sstream>
+#include <fstream>
 #include <iomanip>
 #include <cmath>
 #include <limits>
@@ -1757,6 +1832,15 @@ public:
         return out;
     }
 
+    static void dump_to_file(const value& v, const std::string& filepath, int indent = -1) {
+        std::ofstream file(filepath, std::ios::out | std::ios::binary);
+        if (!file.is_open()) {
+            throw std::runtime_error("[senko::serializer_error] Failed to open file for writing: " + filepath);
+        }
+        std::string s = dump_to_string(v, indent);
+        file.write(s.data(), s.size());
+    }
+
 private:
     std::ostream& m_os;
     int m_indent;
@@ -1770,6 +1854,10 @@ inline std::string value::dump(int indent) const {
 inline void value::dump(std::ostream& os, int indent) const {
     std::string s = dump(indent);
     os << s;
+}
+
+inline void value::dump_file(const std::string& filepath, int indent) const {
+    serializer::dump_to_file(*this, filepath, indent);
 }
 
 inline std::ostream& operator<<(std::ostream& os, const value& j) {
@@ -1966,6 +2054,7 @@ inline const value& value::operator[](const json_pointer& ptr) const {
 #include <sstream>
 #include <functional>
 #include <cctype>
+#include <algorithm>
 
 namespace senko {
 
@@ -1977,13 +2066,22 @@ public:
 namespace detail {
 
 enum class segment_type {
-    root,           // $
-    child_key,      // .key or ['key']
-    child_wildcard, // .* or [*]
-    array_index,    // [0], [-1]
-    descendant_key, // ..key
-    descendant_wildcard, // ..*
-    filter          // [?(@.field == val)]
+    root,               // $
+    child_key,          // .key or ['key']
+    child_wildcard,     // .* or [*]
+    array_index,        // [0], [-1]
+    array_slice,        // [start:end:step]
+    descendant_key,     // ..key
+    descendant_wildcard,// ..*
+    filter              // [?(@.field == val)]
+};
+
+struct slice_params {
+    bool has_start = false;
+    int start = 0;
+    bool has_end = false;
+    int end = 0;
+    int step = 1;
 };
 
 struct filter_expr {
@@ -2024,6 +2122,7 @@ struct path_segment {
     segment_type type;
     std::string key;
     int index = 0;
+    slice_params slice;
     filter_expr filter;
 };
 
@@ -2044,6 +2143,22 @@ inline void collect_descendants(const value& current, std::string_view target_ke
     }
 }
 
+inline void collect_all_descendants(const value& current, std::vector<value>& results) {
+    if (current.is_object()) {
+        const auto& obj = current.get_ref_object();
+        for (const auto& pair : obj) {
+            results.push_back(pair.second);
+            collect_all_descendants(pair.second, results);
+        }
+    } else if (current.is_array()) {
+        const auto& arr = current.get_ref_array();
+        for (const auto& elem : arr) {
+            results.push_back(elem);
+            collect_all_descendants(elem, results);
+        }
+    }
+}
+
 inline std::vector<path_segment> parse_jsonpath(std::string_view expr) {
     std::vector<path_segment> segments;
     size_t i = 0;
@@ -2055,7 +2170,7 @@ inline std::vector<path_segment> parse_jsonpath(std::string_view expr) {
     if (i >= len || expr[i] != '$') {
         throw jsonpath_error("JSONPath expression must start with '$'");
     }
-    segments.push_back({segment_type::root, "", 0, {}});
+    segments.push_back({segment_type::root, "", 0, {}, {}});
     i++; // skip '$'
 
     while (i < len) {
@@ -2065,7 +2180,7 @@ inline std::vector<path_segment> parse_jsonpath(std::string_view expr) {
                 // Recursive descent ..
                 i++;
                 if (i < len && expr[i] == '*') {
-                    segments.push_back({segment_type::descendant_wildcard, "", 0, {}});
+                    segments.push_back({segment_type::descendant_wildcard, "", 0, {}, {}});
                     i++;
                 } else {
                     size_t start = i;
@@ -2073,10 +2188,10 @@ inline std::vector<path_segment> parse_jsonpath(std::string_view expr) {
                         i++;
                     }
                     if (start == i) throw jsonpath_error("Expected key name after '..'");
-                    segments.push_back({segment_type::descendant_key, std::string(expr.substr(start, i - start)), 0, {}});
+                    segments.push_back({segment_type::descendant_key, std::string(expr.substr(start, i - start)), 0, {}, {}});
                 }
             } else if (i < len && expr[i] == '*') {
-                segments.push_back({segment_type::child_wildcard, "", 0, {}});
+                segments.push_back({segment_type::child_wildcard, "", 0, {}, {}});
                 i++;
             } else {
                 size_t start = i;
@@ -2084,14 +2199,14 @@ inline std::vector<path_segment> parse_jsonpath(std::string_view expr) {
                     i++;
                 }
                 if (start == i) throw jsonpath_error("Expected key name after '.'");
-                segments.push_back({segment_type::child_key, std::string(expr.substr(start, i - start)), 0, {}});
+                segments.push_back({segment_type::child_key, std::string(expr.substr(start, i - start)), 0, {}, {}});
             }
         } else if (expr[i] == '[') {
             i++; // skip '['
             while (i < len && std::isspace(static_cast<unsigned char>(expr[i]))) i++;
 
             if (i < len && expr[i] == '*') {
-                segments.push_back({segment_type::child_wildcard, "", 0, {}});
+                segments.push_back({segment_type::child_wildcard, "", 0, {}, {}});
                 i++;
             } else if (i < len && (expr[i] == '\'' || expr[i] == '"')) {
                 // ['key']
@@ -2099,7 +2214,7 @@ inline std::vector<path_segment> parse_jsonpath(std::string_view expr) {
                 size_t start = i;
                 while (i < len && expr[i] != quote) i++;
                 if (i >= len) throw jsonpath_error("Unterminated quoted key in bracket notation");
-                segments.push_back({segment_type::child_key, std::string(expr.substr(start, i - start)), 0, {}});
+                segments.push_back({segment_type::child_key, std::string(expr.substr(start, i - start)), 0, {}, {}});
                 i++; // skip closing quote
             } else if (i < len && expr[i] == '?') {
                 // Filter [?(@.price < 10)]
@@ -2160,15 +2275,72 @@ inline std::vector<path_segment> parse_jsonpath(std::string_view expr) {
                 }
 
                 while (i < len && expr[i] != ']') i++;
-                segments.push_back({segment_type::filter, "", 0, filt});
+                segments.push_back({segment_type::filter, "", 0, {}, filt});
 
             } else {
-                // [index]
-                size_t start = i;
-                if (expr[i] == '-') i++;
-                while (i < len && std::isdigit(static_cast<unsigned char>(expr[i]))) i++;
-                int idx = std::stoi(std::string(expr.substr(start, i - start)));
-                segments.push_back({segment_type::array_index, "", idx, {}});
+                // Check if this is an array slice (contains ':') or a single index
+                size_t close_bracket = expr.find(']', i);
+                if (close_bracket == std::string_view::npos) {
+                    throw jsonpath_error("Missing closing bracket ']' in array subscript");
+                }
+                std::string_view sub = expr.substr(i, close_bracket - i);
+                if (sub.find(':') != std::string_view::npos) {
+                    // Array Slice syntax: [start:end:step]
+                    slice_params sl;
+                    size_t pos = i;
+
+                    // 1. Read start
+                    while (pos < close_bracket && std::isspace(static_cast<unsigned char>(expr[pos]))) pos++;
+                    if (pos < close_bracket && expr[pos] != ':') {
+                        size_t s_start = pos;
+                        if (expr[pos] == '-') pos++;
+                        while (pos < close_bracket && std::isdigit(static_cast<unsigned char>(expr[pos]))) pos++;
+                        sl.start = std::stoi(std::string(expr.substr(s_start, pos - s_start)));
+                        sl.has_start = true;
+                    }
+
+                    while (pos < close_bracket && std::isspace(static_cast<unsigned char>(expr[pos]))) pos++;
+                    if (pos < close_bracket && expr[pos] == ':') {
+                        pos++; // consume first ':'
+                    } else {
+                        throw jsonpath_error("Expected ':' in array slice");
+                    }
+
+                    // 2. Read end
+                    while (pos < close_bracket && std::isspace(static_cast<unsigned char>(expr[pos]))) pos++;
+                    if (pos < close_bracket && expr[pos] != ':' && expr[pos] != ']') {
+                        size_t e_start = pos;
+                        if (expr[pos] == '-') pos++;
+                        while (pos < close_bracket && std::isdigit(static_cast<unsigned char>(expr[pos]))) pos++;
+                        sl.end = std::stoi(std::string(expr.substr(e_start, pos - e_start)));
+                        sl.has_end = true;
+                    }
+
+                    // 3. Read optional step
+                    while (pos < close_bracket && std::isspace(static_cast<unsigned char>(expr[pos]))) pos++;
+                    if (pos < close_bracket && expr[pos] == ':') {
+                        pos++; // consume second ':'
+                        while (pos < close_bracket && std::isspace(static_cast<unsigned char>(expr[pos]))) pos++;
+                        if (pos < close_bracket && expr[pos] != ']') {
+                            size_t st_start = pos;
+                            if (expr[pos] == '-') pos++;
+                            while (pos < close_bracket && std::isdigit(static_cast<unsigned char>(expr[pos]))) pos++;
+                            sl.step = std::stoi(std::string(expr.substr(st_start, pos - st_start)));
+                            if (sl.step == 0) throw jsonpath_error("Step cannot be 0 in array slice");
+                        }
+                    }
+
+                    segments.push_back({segment_type::array_slice, "", 0, sl, {}});
+                    i = close_bracket;
+                } else {
+                    // Single index [index]
+                    size_t start = i;
+                    if (expr[i] == '-') i++;
+                    while (i < len && std::isdigit(static_cast<unsigned char>(expr[i]))) i++;
+                    if (start == i) throw jsonpath_error("Invalid index in array bracket");
+                    int idx = std::stoi(std::string(expr.substr(start, i - start)));
+                    segments.push_back({segment_type::array_index, "", idx, {}, {}});
+                }
             }
 
             while (i < len && expr[i] != ']') i++;
@@ -2234,11 +2406,50 @@ inline std::vector<value> evaluate_jsonpath(const value& root, std::string_view 
                         }
                     }
                     break;
+                case detail::segment_type::array_slice:
+                    if (item.is_array()) {
+                        const auto& arr = item.get_ref_array();
+                        int n = static_cast<int>(arr.size());
+                        int step = seg.slice.step;
+                        if (step == 0) throw jsonpath_error("Step cannot be 0 in array slice");
+
+                        if (step > 0) {
+                            int s = 0;
+                            if (seg.slice.has_start) {
+                                s = seg.slice.start < 0 ? seg.slice.start + n : seg.slice.start;
+                                s = (std::max)(0, (std::min)(n, s));
+                            }
+                            int e = n;
+                            if (seg.slice.has_end) {
+                                e = seg.slice.end < 0 ? seg.slice.end + n : seg.slice.end;
+                                e = (std::max)(0, (std::min)(n, e));
+                            }
+                            for (int idx = s; idx < e; idx += step) {
+                                next_set.push_back(arr[static_cast<size_t>(idx)]);
+                            }
+                        } else {
+                            // Negative step
+                            int s = n - 1;
+                            if (seg.slice.has_start) {
+                                s = seg.slice.start < 0 ? seg.slice.start + n : seg.slice.start;
+                                s = (std::max)(-1, (std::min)(n - 1, s));
+                            }
+                            int e = -1;
+                            if (seg.slice.has_end) {
+                                e = seg.slice.end < 0 ? seg.slice.end + n : seg.slice.end;
+                                e = (std::max)(-1, (std::min)(n - 1, e));
+                            }
+                            for (int idx = s; idx > e; idx += step) {
+                                next_set.push_back(arr[static_cast<size_t>(idx)]);
+                            }
+                        }
+                    }
+                    break;
                 case detail::segment_type::descendant_key:
                     detail::collect_descendants(item, seg.key, next_set);
                     break;
                 case detail::segment_type::descendant_wildcard:
-                    // Add all children recursively
+                    detail::collect_all_descendants(item, next_set);
                     break;
                 case detail::segment_type::filter:
                     if (item.is_array()) {
@@ -2562,6 +2773,50 @@ inline void value::patch_in_place(const value& patch_doc) {
 
 inline value value::diff(const value& source, const value& target) {
     return senko::diff(source, target);
+}
+
+/**
+ * @brief Applies an RFC 7396 JSON Merge Patch to the target JSON document in-place.
+ */
+inline void merge_patch_in_place(value& target, const value& patch_doc) {
+    if (patch_doc.is_object()) {
+        if (!target.is_object()) {
+            target = value::object();
+        }
+        for (const auto& [key, val] : patch_doc.get_ref_object()) {
+            if (val.is_null()) {
+                target.erase(key);
+            } else {
+                if (!target.contains(key)) {
+                    target[key] = nullptr;
+                }
+                merge_patch_in_place(target[key], val);
+            }
+        }
+    } else {
+        target = patch_doc;
+    }
+}
+
+/**
+ * @brief Returns a new JSON value resulting from applying RFC 7396 Merge Patch.
+ */
+inline value merge_patch(const value& target, const value& patch_doc) {
+    value result = target;
+    merge_patch_in_place(result, patch_doc);
+    return result;
+}
+
+inline value value::merge_patch(const value& patch_doc) const {
+    return senko::merge_patch(*this, patch_doc);
+}
+
+inline void value::merge_patch_in_place(const value& patch_doc) {
+    senko::merge_patch_in_place(*this, patch_doc);
+}
+
+inline value value::merge_patch(const value& target, const value& patch_doc) {
+    return senko::merge_patch(target, patch_doc);
 }
 
 } // namespace senko
@@ -3280,6 +3535,22 @@ namespace senko {
 #define SENKO_TO_14(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n) SENKO_TO_13(v, a, b, c, d, e, f, g, h, i, j, k, l, m) SENKO_TO_JSON(v, n)
 #define SENKO_TO_15(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o) SENKO_TO_14(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n) SENKO_TO_JSON(v, o)
 #define SENKO_TO_16(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p) SENKO_TO_15(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o) SENKO_TO_JSON(v, p)
+#define SENKO_TO_17(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q) SENKO_TO_16(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p) SENKO_TO_JSON(v, q)
+#define SENKO_TO_18(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r) SENKO_TO_17(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q) SENKO_TO_JSON(v, r)
+#define SENKO_TO_19(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s) SENKO_TO_18(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r) SENKO_TO_JSON(v, s)
+#define SENKO_TO_20(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t) SENKO_TO_19(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s) SENKO_TO_JSON(v, t)
+#define SENKO_TO_21(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u) SENKO_TO_20(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t) SENKO_TO_JSON(v, u)
+#define SENKO_TO_22(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w) SENKO_TO_21(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u) SENKO_TO_JSON(v, w)
+#define SENKO_TO_23(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x) SENKO_TO_22(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w) SENKO_TO_JSON(v, x)
+#define SENKO_TO_24(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y) SENKO_TO_23(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x) SENKO_TO_JSON(v, y)
+#define SENKO_TO_25(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y, z) SENKO_TO_24(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y) SENKO_TO_JSON(v, z)
+#define SENKO_TO_26(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y, z, _1) SENKO_TO_25(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y, z) SENKO_TO_JSON(v, _1)
+#define SENKO_TO_27(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y, z, _1, _2) SENKO_TO_26(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y, z, _1) SENKO_TO_JSON(v, _2)
+#define SENKO_TO_28(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y, z, _1, _2, _3) SENKO_TO_27(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y, z, _1, _2) SENKO_TO_JSON(v, _3)
+#define SENKO_TO_29(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y, z, _1, _2, _3, _4) SENKO_TO_28(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y, z, _1, _2, _3) SENKO_TO_JSON(v, _4)
+#define SENKO_TO_30(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y, z, _1, _2, _3, _4, _5) SENKO_TO_29(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y, z, _1, _2, _3, _4) SENKO_TO_JSON(v, _5)
+#define SENKO_TO_31(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y, z, _1, _2, _3, _4, _5, _6) SENKO_TO_30(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y, z, _1, _2, _3, _4, _5) SENKO_TO_JSON(v, _6)
+#define SENKO_TO_32(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y, z, _1, _2, _3, _4, _5, _6, _7) SENKO_TO_31(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y, z, _1, _2, _3, _4, _5, _6) SENKO_TO_JSON(v, _7)
 
 #define SENKO_FROM_1(v, a) SENKO_FROM_JSON(v, a)
 #define SENKO_FROM_2(v, a, b) SENKO_FROM_JSON(v, a) SENKO_FROM_JSON(v, b)
@@ -3297,6 +3568,22 @@ namespace senko {
 #define SENKO_FROM_14(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n) SENKO_FROM_13(v, a, b, c, d, e, f, g, h, i, j, k, l, m) SENKO_FROM_JSON(v, n)
 #define SENKO_FROM_15(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o) SENKO_FROM_14(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n) SENKO_FROM_JSON(v, o)
 #define SENKO_FROM_16(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p) SENKO_FROM_15(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o) SENKO_FROM_JSON(v, p)
+#define SENKO_FROM_17(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q) SENKO_FROM_16(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p) SENKO_FROM_JSON(v, q)
+#define SENKO_FROM_18(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r) SENKO_FROM_17(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q) SENKO_FROM_JSON(v, r)
+#define SENKO_FROM_19(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s) SENKO_FROM_18(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r) SENKO_FROM_JSON(v, s)
+#define SENKO_FROM_20(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t) SENKO_FROM_19(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s) SENKO_FROM_JSON(v, t)
+#define SENKO_FROM_21(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u) SENKO_FROM_20(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t) SENKO_FROM_JSON(v, u)
+#define SENKO_FROM_22(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w) SENKO_FROM_21(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u) SENKO_FROM_JSON(v, w)
+#define SENKO_FROM_23(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x) SENKO_FROM_22(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w) SENKO_FROM_JSON(v, x)
+#define SENKO_FROM_24(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y) SENKO_FROM_23(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x) SENKO_FROM_JSON(v, y)
+#define SENKO_FROM_25(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y, z) SENKO_FROM_24(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y) SENKO_FROM_JSON(v, z)
+#define SENKO_FROM_26(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y, z, _1) SENKO_FROM_25(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y, z) SENKO_FROM_JSON(v, _1)
+#define SENKO_FROM_27(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y, z, _1, _2) SENKO_FROM_26(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y, z, _1) SENKO_FROM_JSON(v, _2)
+#define SENKO_FROM_28(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y, z, _1, _2, _3) SENKO_FROM_27(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y, z, _1, _2) SENKO_FROM_JSON(v, _3)
+#define SENKO_FROM_29(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y, z, _1, _2, _3, _4) SENKO_FROM_28(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y, z, _1, _2, _3) SENKO_FROM_JSON(v, _4)
+#define SENKO_FROM_30(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y, z, _1, _2, _3, _4, _5) SENKO_FROM_29(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y, z, _1, _2, _3, _4) SENKO_FROM_JSON(v, _5)
+#define SENKO_FROM_31(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y, z, _1, _2, _3, _4, _5, _6) SENKO_FROM_30(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y, z, _1, _2, _3, _4, _5) SENKO_FROM_JSON(v, _6)
+#define SENKO_FROM_32(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y, z, _1, _2, _3, _4, _5, _6, _7) SENKO_FROM_31(v, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w, x, y, z, _1, _2, _3, _4, _5, _6) SENKO_FROM_JSON(v, _7)
 
 /**
  * @brief Macro to define struct/class serialization & deserialization functions.

@@ -94,3 +94,62 @@ TEST_CASE("JSONPath - Filter Expressions [?(@.field op val)]") {
     CHECK_EQ(keyboard.size(), 1);
     CHECK_EQ(keyboard[0].get<double>(), 45.0);
 }
+
+TEST_CASE("JSONPath - Array Slices [start:end:step]") {
+    json doc = json::parse(R"({
+        "numbers": [10, 20, 30, 40, 50, 60]
+    })");
+
+    // Slice [0:3]
+    auto slice1 = doc.jsonpath("$.numbers[0:3]");
+    CHECK_EQ(slice1.size(), 3);
+    CHECK_EQ(slice1[0].get<int>(), 10);
+    CHECK_EQ(slice1[1].get<int>(), 20);
+    CHECK_EQ(slice1[2].get<int>(), 30);
+
+    // Slice [2:]
+    auto slice2 = doc.jsonpath("$.numbers[2:]");
+    CHECK_EQ(slice2.size(), 4);
+    CHECK_EQ(slice2[0].get<int>(), 30);
+    CHECK_EQ(slice2[3].get<int>(), 60);
+
+    // Slice [:2]
+    auto slice3 = doc.jsonpath("$.numbers[:2]");
+    CHECK_EQ(slice3.size(), 2);
+    CHECK_EQ(slice3[0].get<int>(), 10);
+    CHECK_EQ(slice3[1].get<int>(), 20);
+
+    // Negative slice [-2:]
+    auto slice4 = doc.jsonpath("$.numbers[-2:]");
+    CHECK_EQ(slice4.size(), 2);
+    CHECK_EQ(slice4[0].get<int>(), 50);
+    CHECK_EQ(slice4[1].get<int>(), 60);
+
+    // Slice with step [::2]
+    auto slice5 = doc.jsonpath("$.numbers[::2]");
+    CHECK_EQ(slice5.size(), 3);
+    CHECK_EQ(slice5[0].get<int>(), 10);
+    CHECK_EQ(slice5[1].get<int>(), 30);
+    CHECK_EQ(slice5[2].get<int>(), 50);
+
+    // Reverse slice [::-1]
+    auto slice6 = doc.jsonpath("$.numbers[::-1]");
+    CHECK_EQ(slice6.size(), 6);
+    CHECK_EQ(slice6[0].get<int>(), 60);
+    CHECK_EQ(slice6[5].get<int>(), 10);
+}
+
+TEST_CASE("JSONPath - Recursive Wildcard ($..*)") {
+    json doc = json::parse(R"({
+        "a": 1,
+        "b": {
+            "c": 2,
+            "d": [3, 4]
+        }
+    })");
+
+    auto all = doc.jsonpath("$..*");
+    // Should recursively find all values: 1, {c:2, d:[3,4]}, 2, [3,4], 3, 4
+    CHECK(all.size() >= 5);
+}
+

@@ -74,6 +74,8 @@ if(SENKO_BUILD_TESTS)
         tests/test_patch.cpp
         tests/test_binary.cpp
         tests/test_jsonpath.cpp
+        tests/test_iterators.cpp
+        tests/test_file_io.cpp
     )
     target_link_libraries(senko_tests PRIVATE senko::senko)
     target_include_directories(senko_tests PRIVATE tests)
