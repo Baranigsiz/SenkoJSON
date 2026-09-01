@@ -16,8 +16,8 @@ HEADERS_ORDER = [
     "serializer.hpp",
     "json_pointer.hpp",
     "jsonpath.hpp",
-    os.path.join("binary", "msgpack.hpp"),
-    os.path.join("binary", "cbor.hpp"),
+    "binary/msgpack.hpp",
+    "binary/cbor.hpp",
     "macro.hpp"
 ]
 
@@ -83,7 +83,8 @@ def amalgamate():
         # Strip local #include "..." and #include "../..."
         content = re.sub(r'#include\s+"[^"]+"', '', content)
 
-        combined_content.append(f"\n// ========================================================\n// Header: {h}\n// ========================================================\n")
+        banner_name = h.replace('\\', '/')
+        combined_content.append(f"\n// ========================================================\n// Header: {banner_name}\n// ========================================================\n")
         combined_content.append(content)
 
     combined_content.append(FOOTER)
