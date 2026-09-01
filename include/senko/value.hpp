@@ -501,6 +501,10 @@ public:
     const value& at_ptr(const json_pointer& ptr) const;
     value& operator[](const json_pointer& ptr);
     const value& operator[](const json_pointer& ptr) const;
+
+    // JSONPath support declarations
+    std::vector<value> jsonpath(std::string_view query) const;
+    value jsonpath_first(std::string_view query) const;
 };
 
 // Stream operator for output

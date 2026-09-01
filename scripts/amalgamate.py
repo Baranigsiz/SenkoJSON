@@ -15,6 +15,9 @@ HEADERS_ORDER = [
     "parser.hpp",
     "serializer.hpp",
     "json_pointer.hpp",
+    "jsonpath.hpp",
+    os.path.join("binary", "msgpack.hpp"),
+    os.path.join("binary", "cbor.hpp"),
     "macro.hpp"
 ]
 
@@ -22,17 +25,17 @@ HEADER_GUARD = """/**
  * SenkoJSON - Single Header Amalgamation
  * https://github.com/Baranigsiz/SenkoJSON
  * 
- * Version: 2.0.0
+ * Version: 2.1.0
  * License: MIT
  * 
- * Lightning-fast, zero-overhead modern C++17/20 JSON library.
+ * Lightning-fast, zero-overhead modern C++17/20 JSON library with MessagePack, CBOR & JSONPath.
  */
 
 #ifndef SENKO_SINGLE_AMALGAMATION_HPP
 #define SENKO_SINGLE_AMALGAMATION_HPP
 
 #define SENKO_VERSION_MAJOR 2
-#define SENKO_VERSION_MINOR 0
+#define SENKO_VERSION_MINOR 1
 #define SENKO_VERSION_PATCH 0
 """
 
@@ -77,7 +80,7 @@ def amalgamate():
         # Strip #pragma once
         content = re.sub(r'#pragma\s+once\b', '', content)
 
-        # Strip local #include "..."
+        # Strip local #include "..." and #include "../..."
         content = re.sub(r'#include\s+"[^"]+"', '', content)
 
         combined_content.append(f"\n// ========================================================\n// Header: {h}\n// ========================================================\n")

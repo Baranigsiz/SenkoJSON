@@ -2,7 +2,7 @@
 
 # ⚡ SenkoJSON (閃光)
 
-**A Lightning-Fast, Header-Only, Modern C++17/20 JSON Library for High-Performance Applications**
+**An Ultra-Fast, Header-Only, Modern C++17/20 JSON, MessagePack & CBOR Library with JSONPath Engine**
 
 [![CI Build](https://img.shields.io/badge/build-passing-brightgreen?style=for-the-badge&logo=github-actions)](https://github.com/Baranigsiz/SenkoJSON/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
@@ -13,9 +13,10 @@
 <p align="center">
   <a href="#-key-features">Key Features</a> •
   <a href="#-quick-start">Quick Start</a> •
-  <a href="#-benchmarks">Benchmarks</a> •
+  <a href="#-binary-json-msgpack--cbor">Binary JSON</a> •
+  <a href="#-jsonpath-rfc-9535">JSONPath</a> •
   <a href="#-struct-reflection">Struct Reflection</a> •
-  <a href="#-json-pointer-rfc-6901">JSON Pointer</a> •
+  <a href="#-benchmarks">Benchmarks</a> •
   <a href="#-integration">Integration</a> •
   <a href="#-license">License</a>
 </p>
@@ -26,7 +27,7 @@
 
 ## 🚀 Overview
 
-**SenkoJSON** (*Senkou* / 閃光: Flash of Light / Lightning) is a modern C++ library engineered for developers who demand both **high throughput** and **intuitive, expressive syntax**. Built from scratch using modern C++ idioms (`std::variant`, `std::string_view`, `std::from_chars`), SenkoJSON delivers million-ops/sec performance with zero external dependencies.
+**SenkoJSON** (*Senkou* / 閃光: Flash of Light / Lightning) is a modern C++ serialization engine engineered for developers who demand both **high throughput** and **intuitive, expressive syntax**. Built from scratch using modern C++ idioms (`std::variant`, `std::string_view`, `std::from_chars`), SenkoJSON delivers million-ops/sec performance with zero external dependencies.
 
 Whether you're developing game engines, low-latency microservices, hardware configuration tools, or embedded systems, SenkoJSON provides a frictionless developer experience.
 
@@ -36,10 +37,11 @@ Whether you're developing game engines, low-latency microservices, hardware conf
 
 - **⚡ Blazing Fast Single-Pass Parser:** Zero-copy token scanning without intermediate heap allocations. Over **1,000,000 parses/sec**.
 - **📦 Single Header & Modular Delivery:** Use either the modular includes (`#include <senko/senko.hpp>`) or drop the single header (`single_include/senko/senko.hpp`) into your project.
-- **🎨 Ergonomic DOM API:** Intuitive access like `doc["user"]["name"] = "Alice"`, custom literals (`""_json`), and streaming operators.
-- **🧠 Memory-Efficient DOM:** Powered by compact `std::variant` tagged unions—no bloated node structures.
-- **🧬 Zero-Boilerplate Struct Reflection:** Serialize and deserialize complex nested C++ structs with a single macro: `SENKO_BIND(Type, ...)`.
+- **📦 Universal Binary JSON (MessagePack & CBOR):** Serialize and deserialize directly to/from binary buffers (`to_msgpack`, `from_msgpack`, `to_cbor`, `from_cbor`) for 20-50% smaller payloads and wire speed.
+- **🔍 RFC 9535 JSONPath Engine:** SQL-like querying with wildcards (`[*]`), recursive descent (`$..key`), and conditional filters (`[?(@.price < 10)]`).
 - **🎯 RFC 6901 JSON Pointer:** Query and mutate deep nested structures with `/store/book/0/author` syntax.
+- **🧬 Zero-Boilerplate Struct Reflection:** Serialize and deserialize complex nested C++ structs with a single macro: `SENKO_BIND(Type, ...)`.
+- **🧠 Memory-Efficient DOM:** Powered by compact `std::variant` tagged unions—no bloated node structures.
 - **🌐 Full UTF-8 & Surrogate Pairs:** Strict RFC 8259 compliance with UTF-16 surrogate pairs (`\uD83D\uDE00` -> 😀).
 - **🛠️ Permissive Config Mode:** Optional support for C/C++ style comments (`//`, `/* */`) and trailing commas for configuration files.
 - **🛡️ Rock-Solid Reliability:** 100% test coverage across multiple platforms and compilers (GCC, Clang, MSVC).
@@ -86,7 +88,7 @@ int main() {
 
     // Dynamic manipulation
     data["stars"] = stars + 500;
-    data["version"] = "2.0.0";
+    data["version"] = "2.1.0";
     data["tags"].push_back("zero-allocation");
 
     // Safe fallback value
@@ -98,6 +100,61 @@ int main() {
 
     return 0;
 }
+```
+
+---
+
+## 📦 Binary JSON (MessagePack & CBOR)
+
+Effortlessly compress and transmit your data in standard binary formats:
+
+```cpp
+#include <senko/senko.hpp>
+using json = senko::json;
+
+json data = {
+    {"username", "SenkoKitsune"},
+    {"score", 98500},
+    {"inventory", {"Staff", "Orb"}}
+};
+
+// 1. MessagePack Serialization
+std::vector<uint8_t> msgpack_bytes = senko::to_msgpack(data);
+json from_msg = senko::from_msgpack(msgpack_bytes);
+
+// 2. CBOR Serialization (RFC 8949)
+std::vector<uint8_t> cbor_bytes = senko::to_cbor(data);
+json from_cbor = senko::from_cbor(cbor_bytes);
+```
+
+---
+
+## 🔍 JSONPath (RFC 9535)
+
+Query and filter deep structures using SQL-like JSONPath syntax:
+
+```cpp
+#include <senko/senko.hpp>
+using json = senko::json;
+
+json store = json::parse(R"({
+    "store": {
+        "book": [
+            {"category": "reference", "author": "Nigel Rees", "title": "Sayings of the Century", "price": 8.95},
+            {"category": "fiction", "author": "Evelyn Waugh", "title": "Sword of Honour", "price": 12.99},
+            {"category": "fiction", "author": "J. R. R. Tolkien", "title": "The Lord of the Rings", "price": 22.99}
+        ]
+    }
+})");
+
+// 1. Wildcard Query: get all titles
+auto titles = store.jsonpath("$.store.book[*].title");
+
+// 2. Recursive Descent: find all authors anywhere in the document
+auto authors = store.jsonpath("$..author");
+
+// 3. Conditional Filter: find books cheaper than $10
+auto cheap_books = store.jsonpath("$.store.book[?(@.price < 10.0)].title");
 ```
 
 ---
@@ -179,7 +236,7 @@ include(FetchContent)
 FetchContent_Declare(
     SenkoJSON
     GIT_REPOSITORY https://github.com/Baranigsiz/SenkoJSON.git
-    GIT_TAG        v2.0.0
+    GIT_TAG        v2.1.0
 )
 FetchContent_MakeAvailable(SenkoJSON)
 
@@ -210,12 +267,16 @@ SenkoJSON/
 │   ├── parser.hpp                 # Single-pass streaming recursive descent parser
 │   ├── serializer.hpp             # High-speed stringifier with RFC 8259 escaping
 │   ├── json_pointer.hpp           # RFC 6901 JSON Pointer implementation
+│   ├── jsonpath.hpp               # RFC 9535 JSONPath query engine
+│   ├── binary/
+│   │   ├── msgpack.hpp            # MessagePack binary encoder/decoder
+│   │   └── cbor.hpp               # CBOR (RFC 8949) binary encoder/decoder
 │   ├── macro.hpp                  # Struct reflection macros
 │   └── senko.hpp                  # Master header
 ├── single_include/senko/          # Standalone single-header distribution
 │   └── senko.hpp
 ├── examples/                      # Interactive code examples
-├── tests/                         # Comprehensive unit test suite
+├── tests/                         # Comprehensive unit test suite (23 test cases)
 ├── benchmarks/                    # Latency & throughput benchmark suite
 ├── scripts/amalgamate.py          # Header amalgamation script
 ├── CMakeLists.txt                 # Modern CMake build system

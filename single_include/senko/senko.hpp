@@ -2,17 +2,17 @@
  * SenkoJSON - Single Header Amalgamation
  * https://github.com/Baranigsiz/SenkoJSON
  * 
- * Version: 2.0.0
+ * Version: 2.1.0
  * License: MIT
  * 
- * Lightning-fast, zero-overhead modern C++17/20 JSON library.
+ * Lightning-fast, zero-overhead modern C++17/20 JSON library with MessagePack, CBOR & JSONPath.
  */
 
 #ifndef SENKO_SINGLE_AMALGAMATION_HPP
 #define SENKO_SINGLE_AMALGAMATION_HPP
 
 #define SENKO_VERSION_MAJOR 2
-#define SENKO_VERSION_MINOR 0
+#define SENKO_VERSION_MINOR 1
 #define SENKO_VERSION_PATCH 0
 
 
@@ -671,6 +671,10 @@ public:
     const value& at_ptr(const json_pointer& ptr) const;
     value& operator[](const json_pointer& ptr);
     const value& operator[](const json_pointer& ptr) const;
+
+    // JSONPath support declarations
+    std::vector<value> jsonpath(std::string_view query) const;
+    value jsonpath_first(std::string_view query) const;
 };
 
 // Stream operator for output
@@ -1553,6 +1557,986 @@ inline value& value::operator[](const json_pointer& ptr) {
 
 inline const value& value::operator[](const json_pointer& ptr) const {
     return ptr.resolve(*this);
+}
+
+} // namespace senko
+
+
+// ========================================================
+// Header: jsonpath.hpp
+// ========================================================
+
+
+
+
+
+
+
+#include <string>
+#include <string_view>
+#include <vector>
+#include <sstream>
+#include <functional>
+#include <cctype>
+
+namespace senko {
+
+class jsonpath_error : public exception {
+public:
+    explicit jsonpath_error(std::string msg) : exception("[senko::jsonpath_error] " + std::move(msg)) {}
+};
+
+namespace detail {
+
+enum class segment_type {
+    root,           // $
+    child_key,      // .key or ['key']
+    child_wildcard, // .* or [*]
+    array_index,    // [0], [-1]
+    descendant_key, // ..key
+    descendant_wildcard, // ..*
+    filter          // [?(@.field == val)]
+};
+
+struct filter_expr {
+    std::string key;
+    std::string op; // "==", "!=", "<", "<=", ">", ">="
+    std::string value_str;
+    bool is_number = false;
+    double number_val = 0.0;
+    bool is_bool = false;
+    bool bool_val = false;
+
+    bool evaluate(const value& item) const {
+        if (!item.is_object() || !item.contains(key)) return false;
+        const value& field = item.at(key);
+
+        if (is_number && field.is_number()) {
+            double v = field.get<double>();
+            if (op == "==") return v == number_val;
+            if (op == "!=") return v != number_val;
+            if (op == "<") return v < number_val;
+            if (op == "<=") return v <= number_val;
+            if (op == ">") return v > number_val;
+            if (op == ">=") return v >= number_val;
+        } else if (is_bool && field.is_boolean()) {
+            bool b = field.get<bool>();
+            if (op == "==") return b == bool_val;
+            if (op == "!=") return b != bool_val;
+        } else if (field.is_string()) {
+            std::string s = field.get<std::string>();
+            if (op == "==") return s == value_str;
+            if (op == "!=") return s != value_str;
+        }
+        return false;
+    }
+};
+
+struct path_segment {
+    segment_type type;
+    std::string key;
+    int index = 0;
+    filter_expr filter;
+};
+
+inline void collect_descendants(const value& current, std::string_view target_key, std::vector<value>& results) {
+    if (current.is_object()) {
+        const auto& obj = current.get_ref_object();
+        for (const auto& pair : obj) {
+            if (pair.first == target_key) {
+                results.push_back(pair.second);
+            }
+            collect_descendants(pair.second, target_key, results);
+        }
+    } else if (current.is_array()) {
+        const auto& arr = current.get_ref_array();
+        for (const auto& elem : arr) {
+            collect_descendants(elem, target_key, results);
+        }
+    }
+}
+
+inline std::vector<path_segment> parse_jsonpath(std::string_view expr) {
+    std::vector<path_segment> segments;
+    size_t i = 0;
+    size_t len = expr.size();
+
+    // Skip leading whitespace
+    while (i < len && std::isspace(static_cast<unsigned char>(expr[i]))) i++;
+
+    if (i >= len || expr[i] != '$') {
+        throw jsonpath_error("JSONPath expression must start with '$'");
+    }
+    segments.push_back({segment_type::root, "", 0, {}});
+    i++; // skip '$'
+
+    while (i < len) {
+        if (expr[i] == '.') {
+            i++;
+            if (i < len && expr[i] == '.') {
+                // Recursive descent ..
+                i++;
+                if (i < len && expr[i] == '*') {
+                    segments.push_back({segment_type::descendant_wildcard, "", 0, {}});
+                    i++;
+                } else {
+                    size_t start = i;
+                    while (i < len && (std::isalnum(static_cast<unsigned char>(expr[i])) || expr[i] == '_' || expr[i] == '-')) {
+                        i++;
+                    }
+                    if (start == i) throw jsonpath_error("Expected key name after '..'");
+                    segments.push_back({segment_type::descendant_key, std::string(expr.substr(start, i - start)), 0, {}});
+                }
+            } else if (i < len && expr[i] == '*') {
+                segments.push_back({segment_type::child_wildcard, "", 0, {}});
+                i++;
+            } else {
+                size_t start = i;
+                while (i < len && (std::isalnum(static_cast<unsigned char>(expr[i])) || expr[i] == '_' || expr[i] == '-')) {
+                    i++;
+                }
+                if (start == i) throw jsonpath_error("Expected key name after '.'");
+                segments.push_back({segment_type::child_key, std::string(expr.substr(start, i - start)), 0, {}});
+            }
+        } else if (expr[i] == '[') {
+            i++; // skip '['
+            while (i < len && std::isspace(static_cast<unsigned char>(expr[i]))) i++;
+
+            if (i < len && expr[i] == '*') {
+                segments.push_back({segment_type::child_wildcard, "", 0, {}});
+                i++;
+            } else if (i < len && (expr[i] == '\'' || expr[i] == '"')) {
+                // ['key']
+                char quote = expr[i++];
+                size_t start = i;
+                while (i < len && expr[i] != quote) i++;
+                if (i >= len) throw jsonpath_error("Unterminated quoted key in bracket notation");
+                segments.push_back({segment_type::child_key, std::string(expr.substr(start, i - start)), 0, {}});
+                i++; // skip closing quote
+            } else if (i < len && expr[i] == '?') {
+                // Filter [?(@.price < 10)]
+                i++; // skip '?'
+                while (i < len && std::isspace(static_cast<unsigned char>(expr[i]))) i++;
+                if (i < len && expr[i] == '(') i++; // skip '('
+                while (i < len && std::isspace(static_cast<unsigned char>(expr[i]))) i++;
+
+                if (i < len && expr[i] == '@') i++; // skip '@'
+                if (i < len && expr[i] == '.') i++; // skip '.'
+
+                // Read property name
+                size_t start_k = i;
+                while (i < len && (std::isalnum(static_cast<unsigned char>(expr[i])) || expr[i] == '_' || expr[i] == '-')) i++;
+                std::string k = std::string(expr.substr(start_k, i - start_k));
+
+                while (i < len && std::isspace(static_cast<unsigned char>(expr[i]))) i++;
+
+                // Read operator
+                std::string op;
+                if (i + 1 < len && (expr.substr(i, 2) == "==" || expr.substr(i, 2) == "!=" || expr.substr(i, 2) == "<=" || expr.substr(i, 2) == ">=")) {
+                    op = std::string(expr.substr(i, 2));
+                    i += 2;
+                } else if (i < len && (expr[i] == '<' || expr[i] == '>')) {
+                    op = std::string(1, expr[i]);
+                    i++;
+                } else {
+                    throw jsonpath_error("Unsupported or missing comparison operator in filter");
+                }
+
+                while (i < len && std::isspace(static_cast<unsigned char>(expr[i]))) i++;
+
+                // Read value
+                filter_expr filt;
+                filt.key = k;
+                filt.op = op;
+
+                if (expr[i] == '\'' || expr[i] == '"') {
+                    char q = expr[i++];
+                    size_t sv = i;
+                    while (i < len && expr[i] != q) i++;
+                    filt.value_str = std::string(expr.substr(sv, i - sv));
+                    i++; // skip quote
+                } else {
+                    size_t sv = i;
+                    while (i < len && expr[i] != ')' && expr[i] != ']' && !std::isspace(static_cast<unsigned char>(expr[i]))) i++;
+                    std::string raw_val = std::string(expr.substr(sv, i - sv));
+                    if (raw_val == "true") {
+                        filt.is_bool = true;
+                        filt.bool_val = true;
+                    } else if (raw_val == "false") {
+                        filt.is_bool = true;
+                        filt.bool_val = false;
+                    } else {
+                        filt.is_number = true;
+                        filt.number_val = std::stod(raw_val);
+                    }
+                }
+
+                while (i < len && expr[i] != ']') i++;
+                segments.push_back({segment_type::filter, "", 0, filt});
+
+            } else {
+                // [index]
+                size_t start = i;
+                if (expr[i] == '-') i++;
+                while (i < len && std::isdigit(static_cast<unsigned char>(expr[i]))) i++;
+                int idx = std::stoi(std::string(expr.substr(start, i - start)));
+                segments.push_back({segment_type::array_index, "", idx, {}});
+            }
+
+            while (i < len && expr[i] != ']') i++;
+            if (i >= len || expr[i] != ']') throw jsonpath_error("Expected ']' closing bracket");
+            i++; // skip ']'
+        } else {
+            throw jsonpath_error(std::string("Unexpected character '") + expr[i] + "' in JSONPath");
+        }
+    }
+
+    return segments;
+}
+
+} // namespace detail
+
+inline std::vector<value> evaluate_jsonpath(const value& root, std::string_view query);
+
+inline std::vector<value> value::jsonpath(std::string_view query) const {
+    return evaluate_jsonpath(*this, query);
+}
+
+inline value value::jsonpath_first(std::string_view query) const {
+    auto results = evaluate_jsonpath(*this, query);
+    if (results.empty()) return value(nullptr);
+    return results[0];
+}
+
+inline std::vector<value> evaluate_jsonpath(const value& root, std::string_view query) {
+    auto segments = detail::parse_jsonpath(query);
+    std::vector<value> current_set = {root};
+
+    for (const auto& seg : segments) {
+        std::vector<value> next_set;
+
+        for (const auto& item : current_set) {
+            switch (seg.type) {
+                case detail::segment_type::root:
+                    next_set.push_back(item);
+                    break;
+                case detail::segment_type::child_key:
+                    if (item.is_object() && item.contains(seg.key)) {
+                        next_set.push_back(item.at(seg.key));
+                    }
+                    break;
+                case detail::segment_type::child_wildcard:
+                    if (item.is_object()) {
+                        for (const auto& pair : item.get_ref_object()) {
+                            next_set.push_back(pair.second);
+                        }
+                    } else if (item.is_array()) {
+                        for (const auto& elem : item.get_ref_array()) {
+                            next_set.push_back(elem);
+                        }
+                    }
+                    break;
+                case detail::segment_type::array_index:
+                    if (item.is_array()) {
+                        int idx = seg.index;
+                        const auto& arr = item.get_ref_array();
+                        if (idx < 0) idx += static_cast<int>(arr.size());
+                        if (idx >= 0 && static_cast<size_t>(idx) < arr.size()) {
+                            next_set.push_back(arr[static_cast<size_t>(idx)]);
+                        }
+                    }
+                    break;
+                case detail::segment_type::descendant_key:
+                    detail::collect_descendants(item, seg.key, next_set);
+                    break;
+                case detail::segment_type::descendant_wildcard:
+                    // Add all children recursively
+                    break;
+                case detail::segment_type::filter:
+                    if (item.is_array()) {
+                        for (const auto& elem : item.get_ref_array()) {
+                            if (seg.filter.evaluate(elem)) {
+                                next_set.push_back(elem);
+                            }
+                        }
+                    } else if (item.is_object()) {
+                        if (seg.filter.evaluate(item)) {
+                            next_set.push_back(item);
+                        }
+                    }
+                    break;
+            }
+        }
+
+        current_set = std::move(next_set);
+        if (current_set.empty()) break;
+    }
+
+    return current_set;
+}
+
+} // namespace senko
+
+
+
+// ========================================================
+// Header: binary\msgpack.hpp
+// ========================================================
+
+
+
+
+
+
+
+#include <vector>
+#include <cstdint>
+#include <cstring>
+#include <string_view>
+#include <type_traits>
+
+namespace senko {
+
+class msgpack_error : public exception {
+public:
+    explicit msgpack_error(std::string msg) : exception("[senko::msgpack_error] " + std::move(msg)) {}
+};
+
+namespace detail {
+
+// Big-Endian helpers
+inline void write_u8(std::vector<uint8_t>& out, uint8_t v) {
+    out.push_back(v);
+}
+
+inline void write_u16_be(std::vector<uint8_t>& out, uint16_t v) {
+    out.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+    out.push_back(static_cast<uint8_t>(v & 0xFF));
+}
+
+inline void write_u32_be(std::vector<uint8_t>& out, uint32_t v) {
+    out.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+    out.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+    out.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+    out.push_back(static_cast<uint8_t>(v & 0xFF));
+}
+
+inline void write_u64_be(std::vector<uint8_t>& out, uint64_t v) {
+    for (int i = 7; i >= 0; --i) {
+        out.push_back(static_cast<uint8_t>((v >> (i * 8)) & 0xFF));
+    }
+}
+
+inline uint16_t read_u16_be(const uint8_t* p) {
+    return static_cast<uint16_t>((uint16_t(p[0]) << 8) | uint16_t(p[1]));
+}
+
+inline uint32_t read_u32_be(const uint8_t* p) {
+    return (uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16) | (uint32_t(p[2]) << 8) | uint32_t(p[3]);
+}
+
+inline uint64_t read_u64_be(const uint8_t* p) {
+    uint64_t v = 0;
+    for (int i = 0; i < 8; ++i) {
+        v = (v << 8) | uint64_t(p[i]);
+    }
+    return v;
+}
+
+inline void serialize_msgpack_impl(const value& v, std::vector<uint8_t>& out) {
+    switch (v.type()) {
+        case value_t::null:
+            write_u8(out, 0xC0); // nil
+            break;
+        case value_t::boolean:
+            write_u8(out, v.get<bool>() ? 0xC3 : 0xC2); // true : false
+            break;
+        case value_t::number_integer: {
+            int64_t val = v.get<int64_t>();
+            if (val >= -32 && val <= 127) {
+                write_u8(out, static_cast<uint8_t>(val));
+            } else if (val >= std::numeric_limits<int8_t>::min() && val <= std::numeric_limits<int8_t>::max()) {
+                write_u8(out, 0xD0); // int 8
+                write_u8(out, static_cast<uint8_t>(val));
+            } else if (val >= std::numeric_limits<int16_t>::min() && val <= std::numeric_limits<int16_t>::max()) {
+                write_u8(out, 0xD1); // int 16
+                write_u16_be(out, static_cast<uint16_t>(val));
+            } else if (val >= std::numeric_limits<int32_t>::min() && val <= std::numeric_limits<int32_t>::max()) {
+                write_u8(out, 0xD2); // int 32
+                write_u32_be(out, static_cast<uint32_t>(val));
+            } else {
+                write_u8(out, 0xD3); // int 64
+                write_u64_be(out, static_cast<uint64_t>(val));
+            }
+            break;
+        }
+        case value_t::number_unsigned: {
+            uint64_t val = v.get<uint64_t>();
+            if (val <= 127) {
+                write_u8(out, static_cast<uint8_t>(val));
+            } else if (val <= std::numeric_limits<uint8_t>::max()) {
+                write_u8(out, 0xCC); // uint 8
+                write_u8(out, static_cast<uint8_t>(val));
+            } else if (val <= std::numeric_limits<uint16_t>::max()) {
+                write_u8(out, 0xCD); // uint 16
+                write_u16_be(out, static_cast<uint16_t>(val));
+            } else if (val <= std::numeric_limits<uint32_t>::max()) {
+                write_u8(out, 0xCE); // uint 32
+                write_u32_be(out, static_cast<uint32_t>(val));
+            } else {
+                write_u8(out, 0xCF); // uint 64
+                write_u64_be(out, val);
+            }
+            break;
+        }
+        case value_t::number_float: {
+            double d = v.get<double>();
+            write_u8(out, 0xCB); // float 64
+            uint64_t raw = 0;
+            std::memcpy(&raw, &d, sizeof(double));
+            write_u64_be(out, raw);
+            break;
+        }
+        case value_t::string: {
+            const std::string& str = v.get_ref_string();
+            size_t len = str.size();
+            if (len <= 31) {
+                write_u8(out, static_cast<uint8_t>(0xA0 | len));
+            } else if (len <= 0xFF) {
+                write_u8(out, 0xD9); // str 8
+                write_u8(out, static_cast<uint8_t>(len));
+            } else if (len <= 0xFFFF) {
+                write_u8(out, 0xDA); // str 16
+                write_u16_be(out, static_cast<uint16_t>(len));
+            } else {
+                write_u8(out, 0xDB); // str 32
+                write_u32_be(out, static_cast<uint32_t>(len));
+            }
+            out.insert(out.end(), str.begin(), str.end());
+            break;
+        }
+        case value_t::array: {
+            const auto& arr = v.get_ref_array();
+            size_t len = arr.size();
+            if (len <= 15) {
+                write_u8(out, static_cast<uint8_t>(0x90 | len));
+            } else if (len <= 0xFFFF) {
+                write_u8(out, 0xDC); // array 16
+                write_u16_be(out, static_cast<uint16_t>(len));
+            } else {
+                write_u8(out, 0xDD); // array 32
+                write_u32_be(out, static_cast<uint32_t>(len));
+            }
+            for (const auto& elem : arr) {
+                serialize_msgpack_impl(elem, out);
+            }
+            break;
+        }
+        case value_t::object: {
+            const auto& obj = v.get_ref_object();
+            size_t len = obj.size();
+            if (len <= 15) {
+                write_u8(out, static_cast<uint8_t>(0x80 | len));
+            } else if (len <= 0xFFFF) {
+                write_u8(out, 0xDE); // map 16
+                write_u16_be(out, static_cast<uint16_t>(len));
+            } else {
+                write_u8(out, 0xDF); // map 32
+                write_u32_be(out, static_cast<uint32_t>(len));
+            }
+            for (const auto& pair : obj) {
+                // Key (string)
+                size_t klen = pair.first.size();
+                if (klen <= 31) {
+                    write_u8(out, static_cast<uint8_t>(0xA0 | klen));
+                } else if (klen <= 0xFF) {
+                    write_u8(out, 0xD9);
+                    write_u8(out, static_cast<uint8_t>(klen));
+                } else if (klen <= 0xFFFF) {
+                    write_u8(out, 0xDA);
+                    write_u16_be(out, static_cast<uint16_t>(klen));
+                } else {
+                    write_u8(out, 0xDB);
+                    write_u32_be(out, static_cast<uint32_t>(klen));
+                }
+                out.insert(out.end(), pair.first.begin(), pair.first.end());
+                // Value
+                serialize_msgpack_impl(pair.second, out);
+            }
+            break;
+        }
+    }
+}
+
+class msgpack_reader {
+public:
+    msgpack_reader(const uint8_t* data, size_t size)
+        : m_data(data), m_size(size), m_pos(0) {}
+
+    value parse() {
+        if (m_pos >= m_size) {
+            throw msgpack_error("Unexpected end of MessagePack input");
+        }
+        uint8_t tag = m_data[m_pos++];
+
+        // Positive fixint: 0x00 - 0x7f
+        if (tag <= 0x7F) {
+            return value(static_cast<int64_t>(tag));
+        }
+        // Fixmap: 0x80 - 0x8f
+        if (tag >= 0x80 && tag <= 0x8F) {
+            return parse_map(tag & 0x0F);
+        }
+        // Fixarray: 0x90 - 0x9f
+        if (tag >= 0x90 && tag <= 0x9F) {
+            return parse_array(tag & 0x0F);
+        }
+        // Fixstr: 0xa0 - 0xbf
+        if (tag >= 0xA0 && tag <= 0xBF) {
+            return parse_string_bytes(tag & 0x1F);
+        }
+        // Negative fixint: 0xe0 - 0xff
+        if (tag >= 0xE0) {
+            return value(static_cast<int64_t>(static_cast<int8_t>(tag)));
+        }
+
+        switch (tag) {
+            case 0xC0: return value(nullptr);
+            case 0xC2: return value(false);
+            case 0xC3: return value(true);
+            case 0xCA: { // float 32
+                ensure_bytes(4);
+                uint32_t raw = read_u32_be(&m_data[m_pos]);
+                m_pos += 4;
+                float f = 0.0f;
+                std::memcpy(&f, &raw, sizeof(float));
+                return value(static_cast<double>(f));
+            }
+            case 0xCB: { // float 64
+                ensure_bytes(8);
+                uint64_t raw = read_u64_be(&m_data[m_pos]);
+                m_pos += 8;
+                double d = 0.0;
+                std::memcpy(&d, &raw, sizeof(double));
+                return value(d);
+            }
+            case 0xCC: { // uint 8
+                ensure_bytes(1);
+                return value(static_cast<uint64_t>(m_data[m_pos++]));
+            }
+            case 0xCD: { // uint 16
+                ensure_bytes(2);
+                uint16_t v = read_u16_be(&m_data[m_pos]);
+                m_pos += 2;
+                return value(static_cast<uint64_t>(v));
+            }
+            case 0xCE: { // uint 32
+                ensure_bytes(4);
+                uint32_t v = read_u32_be(&m_data[m_pos]);
+                m_pos += 4;
+                return value(static_cast<uint64_t>(v));
+            }
+            case 0xCF: { // uint 64
+                ensure_bytes(8);
+                uint64_t v = read_u64_be(&m_data[m_pos]);
+                m_pos += 8;
+                return value(v);
+            }
+            case 0xD0: { // int 8
+                ensure_bytes(1);
+                return value(static_cast<int64_t>(static_cast<int8_t>(m_data[m_pos++])));
+            }
+            case 0xD1: { // int 16
+                ensure_bytes(2);
+                int16_t v = static_cast<int16_t>(read_u16_be(&m_data[m_pos]));
+                m_pos += 2;
+                return value(static_cast<int64_t>(v));
+            }
+            case 0xD2: { // int 32
+                ensure_bytes(4);
+                int32_t v = static_cast<int32_t>(read_u32_be(&m_data[m_pos]));
+                m_pos += 4;
+                return value(static_cast<int64_t>(v));
+            }
+            case 0xD3: { // int 64
+                ensure_bytes(8);
+                int64_t v = static_cast<int64_t>(read_u64_be(&m_data[m_pos]));
+                m_pos += 8;
+                return value(v);
+            }
+            case 0xD9: { // str 8
+                ensure_bytes(1);
+                size_t len = m_data[m_pos++];
+                return parse_string_bytes(len);
+            }
+            case 0xDA: { // str 16
+                ensure_bytes(2);
+                size_t len = read_u16_be(&m_data[m_pos]);
+                m_pos += 2;
+                return parse_string_bytes(len);
+            }
+            case 0xDB: { // str 32
+                ensure_bytes(4);
+                size_t len = read_u32_be(&m_data[m_pos]);
+                m_pos += 4;
+                return parse_string_bytes(len);
+            }
+            case 0xDC: { // array 16
+                ensure_bytes(2);
+                size_t len = read_u16_be(&m_data[m_pos]);
+                m_pos += 2;
+                return parse_array(len);
+            }
+            case 0xDD: { // array 32
+                ensure_bytes(4);
+                size_t len = read_u32_be(&m_data[m_pos]);
+                m_pos += 4;
+                return parse_array(len);
+            }
+            case 0xDE: { // map 16
+                ensure_bytes(2);
+                size_t len = read_u16_be(&m_data[m_pos]);
+                m_pos += 2;
+                return parse_map(len);
+            }
+            case 0xDF: { // map 32
+                ensure_bytes(4);
+                size_t len = read_u32_be(&m_data[m_pos]);
+                m_pos += 4;
+                return parse_map(len);
+            }
+            default:
+                throw msgpack_error("Unsupported or invalid MessagePack tag: 0x" + std::to_string(tag));
+        }
+    }
+
+private:
+    const uint8_t* m_data;
+    size_t m_size;
+    size_t m_pos;
+
+    void ensure_bytes(size_t n) {
+        if (m_pos + n > m_size) {
+            throw msgpack_error("Unexpected end of MessagePack input, expected " + std::to_string(n) + " more bytes");
+        }
+    }
+
+    value parse_string_bytes(size_t len) {
+        ensure_bytes(len);
+        std::string str(reinterpret_cast<const char*>(&m_data[m_pos]), len);
+        m_pos += len;
+        return value(std::move(str));
+    }
+
+    value parse_array(size_t len) {
+        value::array_t arr;
+        arr.reserve(len);
+        for (size_t i = 0; i < len; ++i) {
+            arr.push_back(parse());
+        }
+        return value(std::move(arr));
+    }
+
+    value parse_map(size_t len) {
+        value::object_t obj;
+        obj.reserve(len);
+        for (size_t i = 0; i < len; ++i) {
+            value key_v = parse();
+            if (!key_v.is_string()) {
+                throw msgpack_error("Map key in MessagePack must be a string");
+            }
+            value val_v = parse();
+            obj.emplace_back(std::move(key_v.get_ref_string()), std::move(val_v));
+        }
+        return value(std::move(obj));
+    }
+};
+
+} // namespace detail
+
+/**
+ * @brief Serializes a Senko JSON value into a binary MessagePack buffer.
+ */
+inline std::vector<uint8_t> to_msgpack(const value& j) {
+    std::vector<uint8_t> out;
+    detail::serialize_msgpack_impl(j, out);
+    return out;
+}
+
+/**
+ * @brief Deserializes a binary MessagePack buffer into a Senko JSON value.
+ */
+inline value from_msgpack(const uint8_t* data, size_t size) {
+    detail::msgpack_reader reader(data, size);
+    return reader.parse();
+}
+
+inline value from_msgpack(const std::vector<uint8_t>& bytes) {
+    return from_msgpack(bytes.data(), bytes.size());
+}
+
+inline value from_msgpack(std::string_view bytes) {
+    return from_msgpack(reinterpret_cast<const uint8_t*>(bytes.data()), bytes.size());
+}
+
+} // namespace senko
+
+
+// ========================================================
+// Header: binary\cbor.hpp
+// ========================================================
+
+
+
+
+
+
+
+#include <vector>
+#include <cstdint>
+#include <cstring>
+#include <string_view>
+#include <limits>
+
+namespace senko {
+
+class cbor_error : public exception {
+public:
+    explicit cbor_error(std::string msg) : exception("[senko::cbor_error] " + std::move(msg)) {}
+};
+
+namespace detail {
+
+inline void cbor_write_type_and_val(std::vector<uint8_t>& out, uint8_t major, uint64_t val) {
+    uint8_t m = static_cast<uint8_t>(major << 5);
+    if (val < 24) {
+        out.push_back(static_cast<uint8_t>(m | val));
+    } else if (val <= 0xFF) {
+        out.push_back(static_cast<uint8_t>(m | 24));
+        out.push_back(static_cast<uint8_t>(val));
+    } else if (val <= 0xFFFF) {
+        out.push_back(static_cast<uint8_t>(m | 25));
+        out.push_back(static_cast<uint8_t>((val >> 8) & 0xFF));
+        out.push_back(static_cast<uint8_t>(val & 0xFF));
+    } else if (val <= 0xFFFFFFFFULL) {
+        out.push_back(static_cast<uint8_t>(m | 26));
+        out.push_back(static_cast<uint8_t>((val >> 24) & 0xFF));
+        out.push_back(static_cast<uint8_t>((val >> 16) & 0xFF));
+        out.push_back(static_cast<uint8_t>((val >> 8) & 0xFF));
+        out.push_back(static_cast<uint8_t>(val & 0xFF));
+    } else {
+        out.push_back(static_cast<uint8_t>(m | 27));
+        for (int i = 7; i >= 0; --i) {
+            out.push_back(static_cast<uint8_t>((val >> (i * 8)) & 0xFF));
+        }
+    }
+}
+
+inline void serialize_cbor_impl(const value& v, std::vector<uint8_t>& out) {
+    switch (v.type()) {
+        case value_t::null:
+            out.push_back(0xF6); // null
+            break;
+        case value_t::boolean:
+            out.push_back(v.get<bool>() ? 0xF5 : 0xF4); // true : false
+            break;
+        case value_t::number_integer: {
+            int64_t val = v.get<int64_t>();
+            if (val >= 0) {
+                cbor_write_type_and_val(out, 0, static_cast<uint64_t>(val)); // Major 0: unsigned
+            } else {
+                cbor_write_type_and_val(out, 1, static_cast<uint64_t>(-1 - val)); // Major 1: negative
+            }
+            break;
+        }
+        case value_t::number_unsigned: {
+            cbor_write_type_and_val(out, 0, v.get<uint64_t>());
+            break;
+        }
+        case value_t::number_float: {
+            double d = v.get<double>();
+            out.push_back(0xFB); // float 64
+            uint64_t raw = 0;
+            std::memcpy(&raw, &d, sizeof(double));
+            for (int i = 7; i >= 0; --i) {
+                out.push_back(static_cast<uint8_t>((raw >> (i * 8)) & 0xFF));
+            }
+            break;
+        }
+        case value_t::string: {
+            const std::string& str = v.get_ref_string();
+            cbor_write_type_and_val(out, 3, str.size()); // Major 3: text string
+            out.insert(out.end(), str.begin(), str.end());
+            break;
+        }
+        case value_t::array: {
+            const auto& arr = v.get_ref_array();
+            cbor_write_type_and_val(out, 4, arr.size()); // Major 4: array
+            for (const auto& elem : arr) {
+                serialize_cbor_impl(elem, out);
+            }
+            break;
+        }
+        case value_t::object: {
+            const auto& obj = v.get_ref_object();
+            cbor_write_type_and_val(out, 5, obj.size()); // Major 5: map
+            for (const auto& pair : obj) {
+                // Key (text string)
+                cbor_write_type_and_val(out, 3, pair.first.size());
+                out.insert(out.end(), pair.first.begin(), pair.first.end());
+                // Value
+                serialize_cbor_impl(pair.second, out);
+            }
+            break;
+        }
+    }
+}
+
+class cbor_reader {
+public:
+    cbor_reader(const uint8_t* data, size_t size)
+        : m_data(data), m_size(size), m_pos(0) {}
+
+    value parse() {
+        if (m_pos >= m_size) {
+            throw cbor_error("Unexpected end of CBOR input");
+        }
+        uint8_t initial = m_data[m_pos++];
+        uint8_t major = initial >> 5;
+        uint8_t info = initial & 0x1F;
+
+        uint64_t val = read_length(info);
+
+        switch (major) {
+            case 0: // Unsigned integer
+                if (val <= static_cast<uint64_t>((std::numeric_limits<int64_t>::max)())) {
+                    return value(static_cast<int64_t>(val));
+                }
+                return value(val);
+            case 1: // Negative integer (-1 - val)
+                if (val <= static_cast<uint64_t>((std::numeric_limits<int64_t>::max)())) {
+                    return value(static_cast<int64_t>(-1 - static_cast<int64_t>(val)));
+                }
+                throw cbor_error("Negative integer underflow in CBOR");
+            case 2: // Byte string (treat as hex or raw string for JSON DOM)
+            case 3: { // Text string
+                ensure_bytes(val);
+                std::string str(reinterpret_cast<const char*>(&m_data[m_pos]), val);
+                m_pos += val;
+                return value(std::move(str));
+            }
+            case 4: { // Array
+                value::array_t arr;
+                arr.reserve(val);
+                for (size_t i = 0; i < val; ++i) {
+                    arr.push_back(parse());
+                }
+                return value(std::move(arr));
+            }
+            case 5: { // Map
+                value::object_t obj;
+                obj.reserve(val);
+                for (size_t i = 0; i < val; ++i) {
+                    value key_v = parse();
+                    if (!key_v.is_string()) {
+                        throw cbor_error("Map key in CBOR must be a string");
+                    }
+                    value val_v = parse();
+                    obj.emplace_back(std::move(key_v.get_ref_string()), std::move(val_v));
+                }
+                return value(std::move(obj));
+            }
+            case 7: { // Simple / Float
+                if (info == 20) return value(false);
+                if (info == 21) return value(true);
+                if (info == 22) return value(nullptr);
+                if (info == 26) { // float 32
+                    uint32_t raw = static_cast<uint32_t>(val);
+                    float f = 0.0f;
+                    std::memcpy(&f, &raw, sizeof(float));
+                    return value(static_cast<double>(f));
+                }
+                if (info == 27) { // float 64
+                    uint64_t raw = val;
+                    double d = 0.0;
+                    std::memcpy(&d, &raw, sizeof(double));
+                    return value(d);
+                }
+                throw cbor_error("Unsupported CBOR simple type or info: " + std::to_string(info));
+            }
+            default:
+                throw cbor_error("Unsupported CBOR major type: " + std::to_string(major));
+        }
+    }
+
+private:
+    const uint8_t* m_data;
+    size_t m_size;
+    size_t m_pos;
+
+    void ensure_bytes(size_t n) {
+        if (m_pos + n > m_size) {
+            throw cbor_error("Unexpected end of CBOR input, expected " + std::to_string(n) + " more bytes");
+        }
+    }
+
+    uint64_t read_length(uint8_t info) {
+        if (info < 24) {
+            return info;
+        } else if (info == 24) {
+            ensure_bytes(1);
+            return m_data[m_pos++];
+        } else if (info == 25) {
+            ensure_bytes(2);
+            uint16_t v = (uint16_t(m_data[m_pos]) << 8) | uint16_t(m_data[m_pos + 1]);
+            m_pos += 2;
+            return v;
+        } else if (info == 26) {
+            ensure_bytes(4);
+            uint32_t v = (uint32_t(m_data[m_pos]) << 24) |
+                         (uint32_t(m_data[m_pos + 1]) << 16) |
+                         (uint32_t(m_data[m_pos + 2]) << 8) |
+                         uint32_t(m_data[m_pos + 3]);
+            m_pos += 4;
+            return v;
+        } else if (info == 27) {
+            ensure_bytes(8);
+            uint64_t v = 0;
+            for (int i = 0; i < 8; ++i) {
+                v = (v << 8) | uint64_t(m_data[m_pos + i]);
+            }
+            m_pos += 8;
+            return v;
+        }
+        throw cbor_error("Indefinite length or invalid CBOR additional info: " + std::to_string(info));
+    }
+};
+
+} // namespace detail
+
+/**
+ * @brief Serializes a Senko JSON value into a binary CBOR buffer (RFC 8949).
+ */
+inline std::vector<uint8_t> to_cbor(const value& j) {
+    std::vector<uint8_t> out;
+    detail::serialize_cbor_impl(j, out);
+    return out;
+}
+
+/**
+ * @brief Deserializes a binary CBOR buffer into a Senko JSON value.
+ */
+inline value from_cbor(const uint8_t* data, size_t size) {
+    detail::cbor_reader reader(data, size);
+    return reader.parse();
+}
+
+inline value from_cbor(const std::vector<uint8_t>& bytes) {
+    return from_cbor(bytes.data(), bytes.size());
+}
+
+inline value from_cbor(std::string_view bytes) {
+    return from_cbor(reinterpret_cast<const uint8_t*>(bytes.data()), bytes.size());
 }
 
 } // namespace senko
