@@ -1,49 +1,73 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
-#include "corejson/Lexer.h"
-#include "corejson/Parser.h"
+#include <corejson/corejson.hpp>
+
+using json = corejson::json;
 
 int main() {
     std::string inputFile = "apex_config.json";
     std::string outputFile = "optimized_config.json";
 
-    // 1. READ FROM FILE (Dosyadan Okuma)
+    std::cout << "====================================================\n";
+    std::cout << "         CoreJSON v2.0 - Configuration Optimizer    \n";
+    std::cout << "====================================================\n\n";
+
+    // 1. Read input configuration
     std::ifstream fileIn(inputFile);
     if (!fileIn.is_open()) {
-        std::cout << "[ERROR] Could not open " << inputFile << "!\n";
-        return 1;
+        std::cerr << "[ERROR] Could not open '" << inputFile << "'. Creating default.\n";
+        // Create sample config on the fly
+        json sample_config = {
+            {"project", "ApexLegendsOptimizer"},
+            {"version", "2.0.0"},
+            {"performance", {
+                {"max_fps", 144},
+                {"reduce_lag", false},
+                {"resolution_scale", 1.0}
+            }},
+            {"audio", {
+                {"master_volume", 0.8},
+                {"spatial_audio", true}
+            }}
+        };
+        std::ofstream fileInit(inputFile);
+        fileInit << sample_config.dump(4);
+        fileInit.close();
+        fileIn.open(inputFile);
     }
-    
-    std::stringstream buffer;
-    buffer << fileIn.rdbuf();
-    std::string jsonText = buffer.str();
-    fileIn.close();
 
     try {
-        // 2. PARSE (Okunan metni C++ ağacına çevir)
-        std::cout << "[INFO] Parsing configuration file...\n";
-        corejson::Lexer lexer(jsonText);
-        std::vector<corejson::Token> tokens = lexer.tokenize();
-        corejson::Parser parser(tokens);
-        corejson::JsonNode root = parser.parse();
+        // 2. Parse directly with json::parse
+        std::cout << "[INFO] Parsing configuration with CoreJSON v2.0...\n";
+        json root = json::parse(fileIn);
+        fileIn.close();
 
-        // 3. MODIFY DATA IN RAM (Ağaçtaki verileri C++ ile değiştir)
-        std::cout << "[INFO] Optimizing game settings...\n";
-        root.object_values["performance"].object_values["max_fps"] = corejson::JsonNode(240.0);
-        root.object_values["performance"].object_values["reduce_lag"] = corejson::JsonNode(true);
+        // 3. Display current settings
+        std::cout << "[INFO] Current Config Loaded:\n" << root.dump(2) << "\n\n";
 
-        // 4. WRITE TO NEW FILE (Güncel ağacı metne çevirip yeni dosyaya kaydet)
-        std::cout << "[INFO] Saving optimized configuration to " << outputFile << "...\n";
+        // 4. Modify settings with clean, modern syntax
+        std::cout << "[INFO] Applying high-performance optimizations...\n";
+        root["performance"]["max_fps"] = 240;
+        root["performance"]["reduce_lag"] = true;
+        root["performance"]["adaptive_supersampling"] = true;
+        root["metadata"]["last_optimized"] = "2026-09-01T18:30:00Z";
+
+        // 5. Save back to output file
+        std::cout << "[INFO] Saving optimized configuration to '" << outputFile << "'...\n";
         std::ofstream fileOut(outputFile);
         if (fileOut.is_open()) {
-            fileOut << root.dump(4); // 4 spaces indentation
+            fileOut << root.dump(4);
             fileOut.close();
-            std::cout << "[SUCCESS] Process completed!\n";
+            std::cout << "[SUCCESS] File saved successfully!\n\n";
         }
 
+        std::cout << "--- Optimized Result Preview ---\n";
+        std::cout << root.dump(2) << "\n";
+
     } catch (const std::exception& e) {
-        std::cout << "[ERROR] " << e.what() << "\n";
+        std::cerr << "[ERROR] Exception caught: " << e.what() << "\n";
+        return 1;
     }
 
     return 0;

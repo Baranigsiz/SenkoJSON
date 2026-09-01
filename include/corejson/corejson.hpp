@@ -1,0 +1,45 @@
+#pragma once
+
+/**
+ * @file corejson.hpp
+ * @brief Master header for CoreJSON - A modern, high-performance, header-friendly C++ JSON library.
+ * @version 2.0.0
+ * @license MIT
+ */
+
+#define COREJSON_VERSION_MAJOR 2
+#define COREJSON_VERSION_MINOR 0
+#define COREJSON_VERSION_PATCH 0
+
+#include "fwd.hpp"
+#include "error.hpp"
+#include "value.hpp"
+#include "lexer.hpp"
+#include "parser.hpp"
+#include "serializer.hpp"
+#include "json_pointer.hpp"
+#include "macro.hpp"
+
+namespace corejson {
+
+namespace literals {
+
+/**
+ * @brief User-defined literal for parsing JSON strings directly.
+ * Example: `auto j = "{\"key\": 42}"_json;`
+ */
+inline value operator""_json(const char* str, size_t len) {
+    return value::parse(std::string_view(str, len));
+}
+
+/**
+ * @brief User-defined literal for creating JSON Pointer objects.
+ * Example: `auto ptr = "/users/0/name"_json_pointer;`
+ */
+inline json_pointer operator""_json_pointer(const char* str, size_t len) {
+    return json_pointer(std::string_view(str, len));
+}
+
+} // namespace literals
+
+} // namespace corejson
