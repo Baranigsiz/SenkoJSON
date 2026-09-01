@@ -120,10 +120,23 @@ int main() {
         "required": ["status", "code", "users"]
     })";
     senko::schema validator(user_schema);
-
     benchmark("JSON Schema Validation", [&]() {
         bool ok = validator.validate(medium_doc);
         (void)ok;
+    }, 50000, medium_json.size());
+
+    // SAX Streaming Parser Benchmark
+    struct NullSaxHandler : public senko::default_sax_handler {};
+    NullSaxHandler null_handler;
+
+    benchmark("SAX Stream Parse (Zero-Alloc)", [&]() {
+        senko::sax_parse(medium_json, null_handler);
+    }, 50000, medium_json.size());
+
+    // JSONPath Benchmark
+    benchmark("JSONPath Query ($..username)", [&]() {
+        auto res = medium_doc.jsonpath("$..username");
+        (void)res;
     }, 30000, medium_json.size());
 
     std::cout << "\n========================================================================\n";
