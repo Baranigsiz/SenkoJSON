@@ -144,4 +144,23 @@ TEST_CASE("JSON Schema - Combinators (allOf, anyOf, oneOf, not, enum)") {
     senko::schema s_not(not_schema);
     CHECK(s_not.validate(42_json));            // number is not string -> valid
     CHECK(!s_not.validate(json("hello")));    // string -> invalid
+
+    // 4. UTF-8 multi-byte character count in minLength & maxLength
+    json unicode_schema = R"({
+        "type": "string",
+        "minLength": 3,
+        "maxLength": 6
+    })"_json;
+    senko::schema s_uni(unicode_schema);
+    CHECK(s_uni.validate(json("türkçe"))); // 6 characters, 8 bytes
+    CHECK(s_uni.validate(json("😀😀😀")));     // 3 characters, 12 bytes
+    CHECK(s_uni.validate(json("😀😀😀😀😀😀"))); // 6 characters, 24 bytes
+    CHECK(!s_uni.validate(json("😀😀")));     // 2 characters (< 3)
+    CHECK(!s_uni.validate(json("😀😀😀😀😀😀😀"))); // 7 characters (> 6)
+
+    // 5. Infinity must not match integer
+    json int_schema = R"({"type": "integer"})"_json;
+    senko::schema s_int(int_schema);
+    CHECK(!s_int.validate(json(std::numeric_limits<double>::infinity())));
 }
+

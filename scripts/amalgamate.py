@@ -22,14 +22,16 @@ HEADERS_ORDER = [
     "binary/cbor.hpp",
     "macro.hpp",
     "schema.hpp",
-    "sax.hpp"
+    "sax.hpp",
+    "jsonc.hpp",
+    "jsonl.hpp"
 ]
 
 HEADER_GUARD = """/**
  * SenkoJSON - Single Header Amalgamation
  * https://github.com/Baranigsiz/SenkoJSON
  * 
- * Version: 2.4.0
+ * Version: 2.5.0
  * License: MIT
  * 
  * Lightning-fast, zero-overhead modern C++17/20 JSON library with MessagePack, CBOR, JSONPath, JSON Schema & SAX Streaming.
@@ -39,7 +41,7 @@ HEADER_GUARD = """/**
 #define SENKO_SINGLE_AMALGAMATION_HPP
 
 #define SENKO_VERSION_MAJOR 2
-#define SENKO_VERSION_MINOR 4
+#define SENKO_VERSION_MINOR 5
 #define SENKO_VERSION_PATCH 0
 """
 
@@ -61,6 +63,10 @@ inline value operator""_json(long double val) {
 
 inline json_pointer operator""_json_pointer(const char* str, size_t len) {
     return json_pointer(std::string_view(str, len));
+}
+
+inline value operator""_jsonc(const char* str, size_t len) {
+    return jsonc::parse(std::string_view(str, len));
 }
 
 } // namespace literals

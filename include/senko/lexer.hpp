@@ -13,6 +13,14 @@
 #include <limits>
 #include <cstring>
 
+#if defined(__SSE2__) || defined(_M_X64) || (defined(_M_IX86_FP) && _M_IX86_FP >= 2)
+    #define SENKO_HAS_SSE2 1
+    #include <emmintrin.h>
+    #if defined(_MSC_VER)
+        #include <intrin.h>
+    #endif
+#endif
+
 namespace senko {
 
 namespace detail {
@@ -35,6 +43,37 @@ struct char_traits_table {
 };
 
 inline constexpr char_traits_table g_char_table{};
+
+#if defined(SENKO_HAS_SSE2)
+inline size_t find_non_plain_sse2(const char* ptr, size_t len) noexcept {
+    size_t i = 0;
+    const __m128i quote_vec = _mm_set1_epi8('"');
+    const __m128i bslash_vec = _mm_set1_epi8('\\');
+    const __m128i space_vec = _mm_set1_epi8(0x20);
+
+    for (; i + 16 <= len; i += 16) {
+        __m128i chunk = _mm_loadu_si128(reinterpret_cast<const __m128i*>(ptr + i));
+        __m128i is_quote = _mm_cmpeq_epi8(chunk, quote_vec);
+        __m128i is_bslash = _mm_cmpeq_epi8(chunk, bslash_vec);
+        __m128i min_val = _mm_min_epu8(chunk, space_vec);
+        __m128i is_ctrl = _mm_andnot_si128(_mm_cmpeq_epi8(chunk, space_vec), _mm_cmpeq_epi8(chunk, min_val));
+
+        __m128i matches = _mm_or_si128(_mm_or_si128(is_quote, is_bslash), is_ctrl);
+        int mask = _mm_movemask_epi8(matches);
+        if (mask != 0) {
+#if defined(_MSC_VER) && !defined(__clang__)
+            unsigned long idx;
+            _BitScanForward(&idx, static_cast<unsigned long>(mask));
+            return i + idx;
+#else
+            return i + static_cast<size_t>(__builtin_ctz(mask));
+#endif
+        }
+    }
+    return i;
+}
+#endif
+
 } // namespace detail
 
 enum class token_type : uint8_t {
@@ -189,6 +228,16 @@ public:
         size_t chunk_start = m_pos;
 
         while (m_pos < m_src.size()) {
+#if defined(SENKO_HAS_SSE2)
+            if (m_pos + 16 <= m_src.size()) {
+                size_t advanced = detail::find_non_plain_sse2(m_src.data() + m_pos, m_src.size() - m_pos);
+                if (advanced > 0) {
+                    m_pos += advanced;
+                    m_col += advanced;
+                    if (m_pos >= m_src.size()) break;
+                }
+            }
+#endif
             unsigned char c = static_cast<unsigned char>(m_src[m_pos]);
             if (c == '"') {
                 if (m_pos > chunk_start) {

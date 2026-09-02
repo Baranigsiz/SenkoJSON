@@ -2,7 +2,7 @@
  * SenkoJSON - Single Header Amalgamation
  * https://github.com/Baranigsiz/SenkoJSON
  * 
- * Version: 2.4.0
+ * Version: 2.5.0
  * License: MIT
  * 
  * Lightning-fast, zero-overhead modern C++17/20 JSON library with MessagePack, CBOR, JSONPath, JSON Schema & SAX Streaming.
@@ -12,7 +12,7 @@
 #define SENKO_SINGLE_AMALGAMATION_HPP
 
 #define SENKO_VERSION_MAJOR 2
-#define SENKO_VERSION_MINOR 4
+#define SENKO_VERSION_MINOR 5
 #define SENKO_VERSION_PATCH 0
 
 
@@ -129,10 +129,13 @@ private:
     static std::string format_message(std::string_view raw_msg, size_t line, size_t col, size_t offset, std::string_view snippet) {
         std::ostringstream ss;
         ss << "[senko::parse_error] " << raw_msg
-           << " (line " << line << ", column " << col << ", offset " << offset << ")";
+           << " at line " << line << ", column " << col << " (byte offset " << offset << ")";
         if (!snippet.empty()) {
-            ss << "\n    --> " << snippet;
-            ss << "\n        " << std::string(col > 0 ? col - 1 : 0, ' ') << "^";
+            std::string l_str = std::to_string(line);
+            std::string pad = l_str.size() < 4 ? std::string(4 - l_str.size(), ' ') : "";
+            ss << "\n      |\n";
+            ss << " " << pad << l_str << " | " << snippet << "\n";
+            ss << "      | " << std::string(col > 0 ? col - 1 : 0, ' ') << "^~~~";
         }
         return ss.str();
     }
@@ -163,6 +166,15 @@ class pointer_error : public exception {
 public:
     explicit pointer_error(std::string message)
         : exception("[senko::pointer_error] " + std::move(message)) {}
+};
+
+/**
+ * @brief Exception thrown when serializing or writing to files fails.
+ */
+class serializer_error : public exception {
+public:
+    explicit serializer_error(std::string message)
+        : exception("[senko::serializer_error] " + std::move(message)) {}
 };
 
 } // namespace senko
@@ -432,23 +444,19 @@ public:
     }
 
     template <typename T>
-    T value_or(std::string_view key, T default_value) const {
+    T value_or(std::string_view key, const T& default_value) const {
         if (!is_object()) return default_value;
-        const auto& obj = std::get<object_t>(m_data);
-        for (const auto& pair : obj) {
-            if (pair.first == key) {
-                try {
-                    return pair.second.get<T>();
-                } catch (...) {
-                    return default_value;
-                }
-            }
+        const auto* ptr = find(key);
+        if (!ptr) return default_value;
+        try {
+            return ptr->get<T>();
+        } catch (...) {
+            return default_value;
         }
-        return default_value;
     }
 
     template <typename T>
-    T value_or(size_t index, T default_value) const {
+    T value_or(size_t index, const T& default_value) const {
         if (!is_array()) return default_value;
         const auto& arr = std::get<array_t>(m_data);
         if (index >= arr.size()) return default_value;
@@ -484,13 +492,26 @@ public:
         else m_data = nullptr;
     }
 
-    bool contains(std::string_view key) const noexcept {
-        if (!is_object()) return false;
+    value* find(std::string_view key) noexcept {
+        if (!is_object()) return nullptr;
+        auto& obj = std::get<object_t>(m_data);
+        for (auto& pair : obj) {
+            if (pair.first == key) return &pair.second;
+        }
+        return nullptr;
+    }
+
+    const value* find(std::string_view key) const noexcept {
+        if (!is_object()) return nullptr;
         const auto& obj = std::get<object_t>(m_data);
         for (const auto& pair : obj) {
-            if (pair.first == key) return true;
+            if (pair.first == key) return &pair.second;
         }
-        return false;
+        return nullptr;
+    }
+
+    bool contains(std::string_view key) const noexcept {
+        return find(key) != nullptr;
     }
 
     size_t count(std::string_view key) const noexcept {
@@ -566,6 +587,11 @@ public:
     // Array Indexing (mutable) -> automatically becomes array if null
     template <typename Int, typename std::enable_if_t<std::is_integral_v<Int>, int> = 0>
     value& operator[](Int index) {
+        if constexpr (std::is_signed_v<Int>) {
+            if (index < 0) {
+                throw out_of_range("Array index cannot be negative: " + std::to_string(index));
+            }
+        }
         if (is_null()) {
             m_data = array_t{};
         }
@@ -582,6 +608,11 @@ public:
 
     template <typename Int, typename std::enable_if_t<std::is_integral_v<Int>, int> = 0>
     const value& operator[](Int index) const {
+        if constexpr (std::is_signed_v<Int>) {
+            if (index < 0) {
+                throw out_of_range("Array index cannot be negative: " + std::to_string(index));
+            }
+        }
         return at(static_cast<size_t>(index));
     }
 
@@ -703,9 +734,28 @@ public:
         if (type() != other.type()) {
             // Compare integer vs unsigned vs float numerically if both are numbers
             if (is_number() && other.is_number()) {
+                if (is_number_integer() && other.is_number_unsigned()) {
+                    int64_t a = get<int64_t>();
+                    return (a >= 0) && (static_cast<uint64_t>(a) == other.get<uint64_t>());
+                }
+                if (is_number_unsigned() && other.is_number_integer()) {
+                    int64_t b = other.get<int64_t>();
+                    return (b >= 0) && (get<uint64_t>() == static_cast<uint64_t>(b));
+                }
                 return get<double>() == other.get<double>();
             }
             return false;
+        }
+        if (is_object()) {
+            const auto& obj1 = std::get<object_t>(m_data);
+            const auto& obj2 = std::get<object_t>(other.m_data);
+            if (obj1.size() != obj2.size()) return false;
+            if (obj1 == obj2) return true;
+            for (const auto& [k, v] : obj1) {
+                const value* other_v = other.find(k);
+                if (!other_v || *other_v != v) return false;
+            }
+            return true;
         }
         return m_data == other.m_data;
     }
@@ -1085,6 +1135,14 @@ struct adl_serializer<std::unordered_map<std::string, T>> {
 #include <limits>
 #include <cstring>
 
+#if defined(__SSE2__) || defined(_M_X64) || (defined(_M_IX86_FP) && _M_IX86_FP >= 2)
+    #define SENKO_HAS_SSE2 1
+    #include <emmintrin.h>
+    #if defined(_MSC_VER)
+        #include <intrin.h>
+    #endif
+#endif
+
 namespace senko {
 
 namespace detail {
@@ -1107,6 +1165,37 @@ struct char_traits_table {
 };
 
 inline constexpr char_traits_table g_char_table{};
+
+#if defined(SENKO_HAS_SSE2)
+inline size_t find_non_plain_sse2(const char* ptr, size_t len) noexcept {
+    size_t i = 0;
+    const __m128i quote_vec = _mm_set1_epi8('"');
+    const __m128i bslash_vec = _mm_set1_epi8('\\');
+    const __m128i space_vec = _mm_set1_epi8(0x20);
+
+    for (; i + 16 <= len; i += 16) {
+        __m128i chunk = _mm_loadu_si128(reinterpret_cast<const __m128i*>(ptr + i));
+        __m128i is_quote = _mm_cmpeq_epi8(chunk, quote_vec);
+        __m128i is_bslash = _mm_cmpeq_epi8(chunk, bslash_vec);
+        __m128i min_val = _mm_min_epu8(chunk, space_vec);
+        __m128i is_ctrl = _mm_andnot_si128(_mm_cmpeq_epi8(chunk, space_vec), _mm_cmpeq_epi8(chunk, min_val));
+
+        __m128i matches = _mm_or_si128(_mm_or_si128(is_quote, is_bslash), is_ctrl);
+        int mask = _mm_movemask_epi8(matches);
+        if (mask != 0) {
+#if defined(_MSC_VER) && !defined(__clang__)
+            unsigned long idx;
+            _BitScanForward(&idx, static_cast<unsigned long>(mask));
+            return i + idx;
+#else
+            return i + static_cast<size_t>(__builtin_ctz(mask));
+#endif
+        }
+    }
+    return i;
+}
+#endif
+
 } // namespace detail
 
 enum class token_type : uint8_t {
@@ -1261,6 +1350,16 @@ public:
         size_t chunk_start = m_pos;
 
         while (m_pos < m_src.size()) {
+#if defined(SENKO_HAS_SSE2)
+            if (m_pos + 16 <= m_src.size()) {
+                size_t advanced = detail::find_non_plain_sse2(m_src.data() + m_pos, m_src.size() - m_pos);
+                if (advanced > 0) {
+                    m_pos += advanced;
+                    m_col += advanced;
+                    if (m_pos >= m_src.size()) break;
+                }
+            }
+#endif
             unsigned char c = static_cast<unsigned char>(m_src[m_pos]);
             if (c == '"') {
                 if (m_pos > chunk_start) {
@@ -1673,24 +1772,18 @@ private:
     }
 
     value parse_true() {
-        if (m_lexer.get() == 't' && m_lexer.get() == 'r' && m_lexer.get() == 'u' && m_lexer.get() == 'e') {
-            return value(true);
-        }
-        m_lexer.throw_parse_error("Invalid keyword (expected 'true')");
+        m_lexer.expect_keyword("true");
+        return value(true);
     }
 
     value parse_false() {
-        if (m_lexer.get() == 'f' && m_lexer.get() == 'a' && m_lexer.get() == 'l' && m_lexer.get() == 's' && m_lexer.get() == 'e') {
-            return value(false);
-        }
-        m_lexer.throw_parse_error("Invalid keyword (expected 'false')");
+        m_lexer.expect_keyword("false");
+        return value(false);
     }
 
     value parse_null() {
-        if (m_lexer.get() == 'n' && m_lexer.get() == 'u' && m_lexer.get() == 'l' && m_lexer.get() == 'l') {
-            return value(nullptr);
-        }
-        m_lexer.throw_parse_error("Invalid keyword (expected 'null')");
+        m_lexer.expect_keyword("null");
+        return value(nullptr);
     }
 };
 
@@ -1932,7 +2025,7 @@ public:
     static void dump_to_file(const value& v, const std::string& filepath, int indent = -1) {
         std::ofstream file(filepath, std::ios::out | std::ios::binary);
         if (!file.is_open()) {
-            throw std::runtime_error("[senko::serializer_error] Failed to open file for writing: " + filepath);
+            throw serializer_error("Failed to open file for writing: " + filepath);
         }
         std::string s = dump_to_string(v, indent);
         file.write(s.data(), s.size());
@@ -3386,8 +3479,11 @@ private:
     }
 
     value parse_array(size_t len) {
+        if (len > (m_size - m_pos)) {
+            throw msgpack_error("Array size exceeds remaining bytes in MessagePack input");
+        }
         value::array_t arr;
-        arr.reserve(len);
+        arr.reserve((std::min)(len, size_t(4096)));
         for (size_t i = 0; i < len; ++i) {
             arr.push_back(parse());
         }
@@ -3395,8 +3491,11 @@ private:
     }
 
     value parse_map(size_t len) {
+        if (len > (m_size - m_pos)) {
+            throw msgpack_error("Map size exceeds remaining bytes in MessagePack input");
+        }
         value::object_t obj;
-        obj.reserve(len);
+        obj.reserve((std::min)(len, size_t(4096)));
         for (size_t i = 0; i < len; ++i) {
             value key_v = parse();
             if (!key_v.is_string()) {
@@ -3583,16 +3682,22 @@ public:
                 return value(std::move(str));
             }
             case 4: { // Array
+                if (val > (m_size - m_pos)) {
+                    throw cbor_error("Array size exceeds remaining bytes in CBOR input");
+                }
                 value::array_t arr;
-                arr.reserve(val);
+                arr.reserve(static_cast<size_t>((std::min)(val, uint64_t(4096))));
                 for (size_t i = 0; i < val; ++i) {
                     arr.push_back(parse());
                 }
                 return value(std::move(arr));
             }
             case 5: { // Map
+                if (val > (m_size - m_pos)) {
+                    throw cbor_error("Map size exceeds remaining bytes in CBOR input");
+                }
                 value::object_t obj;
-                obj.reserve(val);
+                obj.reserve(static_cast<size_t>((std::min)(val, uint64_t(4096))));
                 for (size_t i = 0; i < val; ++i) {
                     value key_v = parse();
                     if (!key_v.is_string()) {
@@ -3712,7 +3817,7 @@ namespace senko {
 
 // Helper macros for automatic to_json / from_json struct binding
 #define SENKO_TO_JSON(v, key) j[#key] = v.key;
-#define SENKO_FROM_JSON(v, key) if (j.contains(#key)) { j.at(#key).get_to(v.key); }
+#define SENKO_FROM_JSON(v, key) if (const auto* _senko_ptr = j.find(#key)) { _senko_ptr->get_to(v.key); }
 
 // Preprocessor counting and dispatch
 #define SENKO_ARG_N( \
@@ -3814,6 +3919,9 @@ namespace senko {
         SENKO_EXPAND(SENKO_CONCAT(SENKO_TO_, SENKO_NARGS(__VA_ARGS__))(v, __VA_ARGS__)) \
     } \
     inline void from_json(const ::senko::value& j, Type& v) { \
+        if (!j.is_object()) { \
+            throw ::senko::type_error("Expected object for struct deserialization, got " + std::string(j.type_name())); \
+        } \
         SENKO_EXPAND(SENKO_CONCAT(SENKO_FROM_, SENKO_NARGS(__VA_ARGS__))(v, __VA_ARGS__)) \
     }
 
@@ -3864,6 +3972,19 @@ public:
         : exception("[senko::schema_error] " + std::move(msg)) {}
 };
 
+namespace detail {
+inline size_t count_utf8_codepoints(std::string_view s) noexcept {
+    size_t count = 0;
+    for (size_t i = 0; i < s.size(); ++i) {
+        unsigned char c = static_cast<unsigned char>(s[i]);
+        if ((c & 0xC0) != 0x80) {
+            count++;
+        }
+    }
+    return count;
+}
+} // namespace detail
+
 /**
  * @brief High-performance, zero-dependency JSON Schema (Draft-07) Validator.
  */
@@ -3904,7 +4025,14 @@ private:
     static bool check_type_match(std::string_view expected_type, const value& instance) {
         if (expected_type == "null") return instance.is_null();
         if (expected_type == "boolean") return instance.is_boolean();
-        if (expected_type == "integer") return instance.is_number_integer() || instance.is_number_unsigned() || (instance.is_number_float() && std::floor(instance.get<double>()) == instance.get<double>());
+        if (expected_type == "integer") {
+            if (instance.is_number_integer() || instance.is_number_unsigned()) return true;
+            if (instance.is_number_float()) {
+                double d = instance.get<double>();
+                return std::isfinite(d) && std::floor(d) == d;
+            }
+            return false;
+        }
         if (expected_type == "number") return instance.is_number();
         if (expected_type == "string") return instance.is_string();
         if (expected_type == "array") return instance.is_array();
@@ -4019,18 +4147,19 @@ private:
         // 5. String constraints
         if (inst.is_string()) {
             const std::string& s = inst.get_ref_string();
+            size_t char_count = detail::count_utf8_codepoints(s);
 
             if (sch.contains("minLength") && sch.at("minLength").is_number()) {
                 size_t min_l = static_cast<size_t>(sch.at("minLength").get<int64_t>());
-                if (s.size() < min_l) {
-                    err = "String length " + std::to_string(s.size()) + " is less than minLength " + std::to_string(min_l) + " at " + path;
+                if (char_count < min_l) {
+                    err = "String length " + std::to_string(char_count) + " is less than minLength " + std::to_string(min_l) + " at " + path;
                     return false;
                 }
             }
             if (sch.contains("maxLength") && sch.at("maxLength").is_number()) {
                 size_t max_l = static_cast<size_t>(sch.at("maxLength").get<int64_t>());
-                if (s.size() > max_l) {
-                    err = "String length " + std::to_string(s.size()) + " is greater than maxLength " + std::to_string(max_l) + " at " + path;
+                if (char_count > max_l) {
+                    err = "String length " + std::to_string(char_count) + " is greater than maxLength " + std::to_string(max_l) + " at " + path;
                     return false;
                 }
             }
@@ -4436,6 +4565,220 @@ inline bool sax_parse(std::istream& is, Handler& handler, bool allow_comments = 
 } // namespace senko
 
 
+// ========================================================
+// Header: jsonc.hpp
+// ========================================================
+
+
+
+
+
+
+#include <string_view>
+#include <istream>
+#include <string>
+
+namespace senko {
+
+/**
+ * @brief JSONC (JSON with Comments & Trailing Commas) Parser Engine.
+ * Ideal for application configuration, VS Code settings.json, tsconfig.json, and game configs.
+ */
+namespace jsonc {
+
+/**
+ * @brief Parses a JSONC string containing single-line comments (//), multi-line comments (/* * /), and trailing commas.
+ */
+inline value parse(std::string_view input) {
+    return value::parse(input, /*allow_comments=*/true, /*allow_trailing_comma=*/true);
+}
+
+/**
+ * @brief Parses a JSONC input stream.
+ */
+inline value parse(std::istream& is) {
+    return value::parse(is, /*allow_comments=*/true, /*allow_trailing_comma=*/true);
+}
+
+/**
+ * @brief Parses a JSONC file from disk.
+ */
+inline value parse_file(const std::string& filepath) {
+    return value::parse_file(filepath, /*allow_comments=*/true, /*allow_trailing_comma=*/true);
+}
+
+} // namespace jsonc
+
+namespace literals {
+
+/**
+ * @brief User-defined literal for parsing JSONC strings with comments and trailing commas.
+ * Example: auto cfg = R"({ // comment\n "port": 8080, })"_jsonc;
+ */
+inline value operator""_jsonc(const char* str, size_t len) {
+    return jsonc::parse(std::string_view(str, len));
+}
+
+} // namespace literals
+
+} // namespace senko
+
+
+// ========================================================
+// Header: jsonl.hpp
+// ========================================================
+
+
+
+
+
+
+
+#include <string>
+#include <string_view>
+#include <istream>
+#include <fstream>
+#include <memory>
+#include <utility>
+
+namespace senko {
+
+/**
+ * @brief High-performance, streaming reader for JSON Lines / NDJSON (Newline Delimited JSON).
+ * Memory efficient: processes gigabyte-scale datasets line-by-line with minimal RAM overhead.
+ */
+class jsonl_reader {
+public:
+    class iterator {
+    public:
+        using value_type = value;
+        using difference_type = std::ptrdiff_t;
+        using pointer = const value*;
+        using reference = const value&;
+        using iterator_category = std::input_iterator_tag;
+
+        iterator() : m_reader(nullptr), m_line_num(0), m_done(true) {}
+
+        explicit iterator(jsonl_reader* reader)
+            : m_reader(reader), m_line_num(0), m_done(false) {
+            advance();
+        }
+
+        reference operator*() const noexcept { return m_current; }
+        pointer operator->() const noexcept { return &m_current; }
+
+        iterator& operator++() {
+            advance();
+            return *this;
+        }
+
+        bool operator==(const iterator& other) const noexcept {
+            if (m_done && other.m_done) return true;
+            return m_done == other.m_done && m_reader == other.m_reader && m_line_num == other.m_line_num;
+        }
+
+        bool operator!=(const iterator& other) const noexcept {
+            return !(*this == other);
+        }
+
+        size_t line_number() const noexcept { return m_line_num; }
+
+    private:
+        jsonl_reader* m_reader;
+        size_t m_line_num;
+        bool m_done;
+        value m_current;
+
+        void advance() {
+            if (!m_reader) {
+                m_done = true;
+                return;
+            }
+            std::string line;
+            while (m_reader->read_line(line)) {
+                m_line_num++;
+                // Skip empty lines or whitespace-only lines
+                size_t start = 0;
+                while (start < line.size() && (line[start] == ' ' || line[start] == '\t' || line[start] == '\r')) start++;
+                if (start >= line.size()) continue;
+
+                m_current = value::parse(std::string_view(line.data() + start, line.size() - start));
+                return;
+            }
+            m_done = true;
+        }
+    };
+
+    explicit jsonl_reader(std::string_view text)
+        : m_type(source_type::memory), m_text(text), m_pos(0) {}
+
+    explicit jsonl_reader(std::istream& is)
+        : m_type(source_type::stream), m_stream(&is) {}
+
+    static jsonl_reader from_file(const std::string& filepath) {
+        return jsonl_reader(filepath, file_tag{});
+    }
+
+    iterator begin() { return iterator(this); }
+    iterator end() { return iterator(); }
+
+private:
+    struct file_tag {};
+    jsonl_reader(const std::string& filepath, file_tag)
+        : m_type(source_type::file), m_file(std::make_unique<std::ifstream>(filepath, std::ios::in | std::ios::binary)) {
+        if (!m_file->is_open()) {
+            throw parse_error("Failed to open JSONL file: " + filepath);
+        }
+        m_stream = m_file.get();
+    }
+
+    enum class source_type { memory, stream, file };
+    source_type m_type;
+    std::string_view m_text;
+    size_t m_pos = 0;
+    std::unique_ptr<std::ifstream> m_file;
+    std::istream* m_stream = nullptr;
+
+    bool read_line(std::string& out) {
+        out.clear();
+        if (m_type == source_type::memory) {
+            if (m_pos >= m_text.size()) return false;
+            size_t next_nl = m_text.find('\n', m_pos);
+            if (next_nl == std::string_view::npos) {
+                out.assign(m_text.substr(m_pos));
+                m_pos = m_text.size();
+            } else {
+                out.assign(m_text.substr(m_pos, next_nl - m_pos));
+                m_pos = next_nl + 1;
+            }
+            return true;
+        } else {
+            if (!m_stream || !*m_stream) return false;
+            if (std::getline(*m_stream, out)) {
+                return true;
+            }
+            return false;
+        }
+    }
+
+    friend class iterator;
+};
+
+namespace jsonl {
+inline jsonl_reader from_file(const std::string& filepath) {
+    return jsonl_reader::from_file(filepath);
+}
+inline jsonl_reader parse(std::string_view text) {
+    return jsonl_reader(text);
+}
+inline jsonl_reader parse(std::istream& is) {
+    return jsonl_reader(is);
+}
+} // namespace jsonl
+
+} // namespace senko
+
+
 namespace senko {
 namespace literals {
 
@@ -4453,6 +4796,10 @@ inline value operator""_json(long double val) {
 
 inline json_pointer operator""_json_pointer(const char* str, size_t len) {
     return json_pointer(std::string_view(str, len));
+}
+
+inline value operator""_jsonc(const char* str, size_t len) {
+    return jsonc::parse(std::string_view(str, len));
 }
 
 } // namespace literals

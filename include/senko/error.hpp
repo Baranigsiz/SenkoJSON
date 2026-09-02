@@ -44,10 +44,13 @@ private:
     static std::string format_message(std::string_view raw_msg, size_t line, size_t col, size_t offset, std::string_view snippet) {
         std::ostringstream ss;
         ss << "[senko::parse_error] " << raw_msg
-           << " (line " << line << ", column " << col << ", offset " << offset << ")";
+           << " at line " << line << ", column " << col << " (byte offset " << offset << ")";
         if (!snippet.empty()) {
-            ss << "\n    --> " << snippet;
-            ss << "\n        " << std::string(col > 0 ? col - 1 : 0, ' ') << "^";
+            std::string l_str = std::to_string(line);
+            std::string pad = l_str.size() < 4 ? std::string(4 - l_str.size(), ' ') : "";
+            ss << "\n      |\n";
+            ss << " " << pad << l_str << " | " << snippet << "\n";
+            ss << "      | " << std::string(col > 0 ? col - 1 : 0, ' ') << "^~~~";
         }
         return ss.str();
     }
@@ -78,6 +81,15 @@ class pointer_error : public exception {
 public:
     explicit pointer_error(std::string message)
         : exception("[senko::pointer_error] " + std::move(message)) {}
+};
+
+/**
+ * @brief Exception thrown when serializing or writing to files fails.
+ */
+class serializer_error : public exception {
+public:
+    explicit serializer_error(std::string message)
+        : exception("[senko::serializer_error] " + std::move(message)) {}
 };
 
 } // namespace senko

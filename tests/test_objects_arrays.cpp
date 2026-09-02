@@ -52,8 +52,18 @@ TEST_CASE("Containers - Object Operations") {
     CHECK_EQ(obj.value_or("missing", 999), 999);
     CHECK_EQ(obj.value_or("name", std::string("default")), "SenkoJSON");
 
+    // find() testing
+    CHECK(obj.find("name") != nullptr);
+    CHECK_EQ(obj.find("name")->get<std::string>(), "SenkoJSON");
+    CHECK(obj.find("missing_key") == nullptr);
+
     // at() throws on missing
     CHECK_THROWS(obj.at("missing_key"));
+
+    // Order-independent object equality
+    json o1 = {{"a", 1}, {"b", 2}};
+    json o2 = {{"b", 2}, {"a", 1}};
+    CHECK(o1 == o2);
 
     // Erase key
     CHECK(obj.erase("version"));

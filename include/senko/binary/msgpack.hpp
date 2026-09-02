@@ -344,8 +344,11 @@ private:
     }
 
     value parse_array(size_t len) {
+        if (len > (m_size - m_pos)) {
+            throw msgpack_error("Array size exceeds remaining bytes in MessagePack input");
+        }
         value::array_t arr;
-        arr.reserve(len);
+        arr.reserve((std::min)(len, size_t(4096)));
         for (size_t i = 0; i < len; ++i) {
             arr.push_back(parse());
         }
@@ -353,8 +356,11 @@ private:
     }
 
     value parse_map(size_t len) {
+        if (len > (m_size - m_pos)) {
+            throw msgpack_error("Map size exceeds remaining bytes in MessagePack input");
+        }
         value::object_t obj;
-        obj.reserve(len);
+        obj.reserve((std::min)(len, size_t(4096)));
         for (size_t i = 0; i < len; ++i) {
             value key_v = parse();
             if (!key_v.is_string()) {

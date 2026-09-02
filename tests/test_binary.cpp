@@ -79,3 +79,14 @@ TEST_CASE("Binary - Negative & Boundary Integers") {
     CHECK_EQ(cbor_res["neg_med"].get<int>(), -1000);
     CHECK_EQ(cbor_res["neg_large"].get<int64_t>(), -9876543210LL);
 }
+
+TEST_CASE("Binary - DoS and Oversized Length Protection") {
+    // Malicious MessagePack payload claiming 4GB array length in a 5-byte buffer (0xDD = array 32)
+    std::vector<uint8_t> malicious_msgpack = {0xDD, 0xFF, 0xFF, 0xFF, 0xFF};
+    CHECK_THROWS(senko::from_msgpack(malicious_msgpack));
+
+    // Malicious CBOR payload claiming 4GB array length in a 5-byte buffer (0x9A = array 32-bit length)
+    std::vector<uint8_t> malicious_cbor = {0x9A, 0xFF, 0xFF, 0xFF, 0xFF};
+    CHECK_THROWS(senko::from_cbor(malicious_cbor));
+}
+

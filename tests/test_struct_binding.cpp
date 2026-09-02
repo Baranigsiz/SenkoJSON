@@ -40,6 +40,12 @@ TEST_CASE("Struct Binding - Serialization & Deserialization") {
     Player p3 = partial.get<Player>();
     CHECK_EQ(p3.name, "Noob");
     CHECK_EQ(p3.level, 1);
+
+    // Deserializing struct from non-object throws type_error
+    json not_an_obj = 123;
+    CHECK_THROWS(not_an_obj.get<Player>());
+    json array_json = json::array({1, 2, 3});
+    CHECK_THROWS(array_json.get<Player>());
 }
 
 struct BigConfig {

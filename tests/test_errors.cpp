@@ -29,6 +29,17 @@ TEST_CASE("Errors - Syntax Errors & Diagnostics") {
     CHECK_THROWS(json::parse("0123")); // leading zero
     CHECK_THROWS(json::parse("+123")); // plus sign not allowed in standard JSON
     CHECK_THROWS(json::parse("1."));   // missing digits after dot
+
+    // Spaced keywords rejected
+    CHECK_THROWS(json::parse("[t r u e]"));
+    CHECK_THROWS(json::parse("[f a l s e]"));
+    CHECK_THROWS(json::parse("[n u l l]"));
+
+    // Negative array indexing
+    json arr = json::array({1, 2, 3});
+    CHECK_THROWS(arr[-1]);
+    const json carr = json::array({1, 2, 3});
+    CHECK_THROWS(carr[-1]);
 }
 
 TEST_CASE("Errors - Permissive Config Mode (Comments & Trailing Comma)") {

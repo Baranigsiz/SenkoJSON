@@ -138,16 +138,22 @@ public:
                 return value(std::move(str));
             }
             case 4: { // Array
+                if (val > (m_size - m_pos)) {
+                    throw cbor_error("Array size exceeds remaining bytes in CBOR input");
+                }
                 value::array_t arr;
-                arr.reserve(val);
+                arr.reserve(static_cast<size_t>((std::min)(val, uint64_t(4096))));
                 for (size_t i = 0; i < val; ++i) {
                     arr.push_back(parse());
                 }
                 return value(std::move(arr));
             }
             case 5: { // Map
+                if (val > (m_size - m_pos)) {
+                    throw cbor_error("Map size exceeds remaining bytes in CBOR input");
+                }
                 value::object_t obj;
-                obj.reserve(val);
+                obj.reserve(static_cast<size_t>((std::min)(val, uint64_t(4096))));
                 for (size_t i = 0; i < val; ++i) {
                     value key_v = parse();
                     if (!key_v.is_string()) {

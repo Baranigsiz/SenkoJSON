@@ -33,6 +33,19 @@ public:
         : exception("[senko::schema_error] " + std::move(msg)) {}
 };
 
+namespace detail {
+inline size_t count_utf8_codepoints(std::string_view s) noexcept {
+    size_t count = 0;
+    for (size_t i = 0; i < s.size(); ++i) {
+        unsigned char c = static_cast<unsigned char>(s[i]);
+        if ((c & 0xC0) != 0x80) {
+            count++;
+        }
+    }
+    return count;
+}
+} // namespace detail
+
 /**
  * @brief High-performance, zero-dependency JSON Schema (Draft-07) Validator.
  */
@@ -73,7 +86,14 @@ private:
     static bool check_type_match(std::string_view expected_type, const value& instance) {
         if (expected_type == "null") return instance.is_null();
         if (expected_type == "boolean") return instance.is_boolean();
-        if (expected_type == "integer") return instance.is_number_integer() || instance.is_number_unsigned() || (instance.is_number_float() && std::floor(instance.get<double>()) == instance.get<double>());
+        if (expected_type == "integer") {
+            if (instance.is_number_integer() || instance.is_number_unsigned()) return true;
+            if (instance.is_number_float()) {
+                double d = instance.get<double>();
+                return std::isfinite(d) && std::floor(d) == d;
+            }
+            return false;
+        }
         if (expected_type == "number") return instance.is_number();
         if (expected_type == "string") return instance.is_string();
         if (expected_type == "array") return instance.is_array();
@@ -188,18 +208,19 @@ private:
         // 5. String constraints
         if (inst.is_string()) {
             const std::string& s = inst.get_ref_string();
+            size_t char_count = detail::count_utf8_codepoints(s);
 
             if (sch.contains("minLength") && sch.at("minLength").is_number()) {
                 size_t min_l = static_cast<size_t>(sch.at("minLength").get<int64_t>());
-                if (s.size() < min_l) {
-                    err = "String length " + std::to_string(s.size()) + " is less than minLength " + std::to_string(min_l) + " at " + path;
+                if (char_count < min_l) {
+                    err = "String length " + std::to_string(char_count) + " is less than minLength " + std::to_string(min_l) + " at " + path;
                     return false;
                 }
             }
             if (sch.contains("maxLength") && sch.at("maxLength").is_number()) {
                 size_t max_l = static_cast<size_t>(sch.at("maxLength").get<int64_t>());
-                if (s.size() > max_l) {
-                    err = "String length " + std::to_string(s.size()) + " is greater than maxLength " + std::to_string(max_l) + " at " + path;
+                if (char_count > max_l) {
+                    err = "String length " + std::to_string(char_count) + " is greater than maxLength " + std::to_string(max_l) + " at " + path;
                     return false;
                 }
             }

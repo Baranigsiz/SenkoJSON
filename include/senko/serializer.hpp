@@ -210,7 +210,7 @@ public:
     static void dump_to_file(const value& v, const std::string& filepath, int indent = -1) {
         std::ofstream file(filepath, std::ios::out | std::ios::binary);
         if (!file.is_open()) {
-            throw std::runtime_error("[senko::serializer_error] Failed to open file for writing: " + filepath);
+            throw serializer_error("Failed to open file for writing: " + filepath);
         }
         std::string s = dump_to_string(v, indent);
         file.write(s.data(), s.size());

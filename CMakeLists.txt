@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(SenkoJSON VERSION 2.4.0 LANGUAGES CXX)
+project(SenkoJSON VERSION 2.5.0 LANGUAGES CXX)
 
 # ==============================================================================
 # C++ Standard & Compiler Flags
@@ -63,6 +63,12 @@ if(SENKO_BUILD_EXAMPLES)
 
     add_executable(example_09_streaming_sax_parser examples/09_streaming_sax_parser.cpp)
     target_link_libraries(example_09_streaming_sax_parser PRIVATE senko::senko)
+
+    add_executable(example_10_jsonc_configuration examples/10_jsonc_configuration.cpp)
+    target_link_libraries(example_10_jsonc_configuration PRIVATE senko::senko)
+
+    add_executable(example_11_jsonl_streaming examples/11_jsonl_streaming.cpp)
+    target_link_libraries(example_11_jsonl_streaming PRIVATE senko::senko)
 endif()
 
 # ==============================================================================
@@ -87,6 +93,7 @@ if(SENKO_BUILD_TESTS)
         tests/test_file_io.cpp
         tests/test_schema.cpp
         tests/test_sax.cpp
+        tests/test_jsonc_jsonl.cpp
     )
     target_link_libraries(senko_tests PRIVATE senko::senko)
     target_include_directories(senko_tests PRIVATE tests)

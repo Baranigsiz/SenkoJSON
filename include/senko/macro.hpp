@@ -7,7 +7,7 @@ namespace senko {
 
 // Helper macros for automatic to_json / from_json struct binding
 #define SENKO_TO_JSON(v, key) j[#key] = v.key;
-#define SENKO_FROM_JSON(v, key) if (j.contains(#key)) { j.at(#key).get_to(v.key); }
+#define SENKO_FROM_JSON(v, key) if (const auto* _senko_ptr = j.find(#key)) { _senko_ptr->get_to(v.key); }
 
 // Preprocessor counting and dispatch
 #define SENKO_ARG_N( \
@@ -109,6 +109,9 @@ namespace senko {
         SENKO_EXPAND(SENKO_CONCAT(SENKO_TO_, SENKO_NARGS(__VA_ARGS__))(v, __VA_ARGS__)) \
     } \
     inline void from_json(const ::senko::value& j, Type& v) { \
+        if (!j.is_object()) { \
+            throw ::senko::type_error("Expected object for struct deserialization, got " + std::string(j.type_name())); \
+        } \
         SENKO_EXPAND(SENKO_CONCAT(SENKO_FROM_, SENKO_NARGS(__VA_ARGS__))(v, __VA_ARGS__)) \
     }
 

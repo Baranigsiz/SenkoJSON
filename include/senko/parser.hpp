@@ -147,24 +147,18 @@ private:
     }
 
     value parse_true() {
-        if (m_lexer.get() == 't' && m_lexer.get() == 'r' && m_lexer.get() == 'u' && m_lexer.get() == 'e') {
-            return value(true);
-        }
-        m_lexer.throw_parse_error("Invalid keyword (expected 'true')");
+        m_lexer.expect_keyword("true");
+        return value(true);
     }
 
     value parse_false() {
-        if (m_lexer.get() == 'f' && m_lexer.get() == 'a' && m_lexer.get() == 'l' && m_lexer.get() == 's' && m_lexer.get() == 'e') {
-            return value(false);
-        }
-        m_lexer.throw_parse_error("Invalid keyword (expected 'false')");
+        m_lexer.expect_keyword("false");
+        return value(false);
     }
 
     value parse_null() {
-        if (m_lexer.get() == 'n' && m_lexer.get() == 'u' && m_lexer.get() == 'l' && m_lexer.get() == 'l') {
-            return value(nullptr);
-        }
-        m_lexer.throw_parse_error("Invalid keyword (expected 'null')");
+        m_lexer.expect_keyword("null");
+        return value(nullptr);
     }
 };
 

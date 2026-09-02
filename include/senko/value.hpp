@@ -258,23 +258,19 @@ public:
     }
 
     template <typename T>
-    T value_or(std::string_view key, T default_value) const {
+    T value_or(std::string_view key, const T& default_value) const {
         if (!is_object()) return default_value;
-        const auto& obj = std::get<object_t>(m_data);
-        for (const auto& pair : obj) {
-            if (pair.first == key) {
-                try {
-                    return pair.second.get<T>();
-                } catch (...) {
-                    return default_value;
-                }
-            }
+        const auto* ptr = find(key);
+        if (!ptr) return default_value;
+        try {
+            return ptr->get<T>();
+        } catch (...) {
+            return default_value;
         }
-        return default_value;
     }
 
     template <typename T>
-    T value_or(size_t index, T default_value) const {
+    T value_or(size_t index, const T& default_value) const {
         if (!is_array()) return default_value;
         const auto& arr = std::get<array_t>(m_data);
         if (index >= arr.size()) return default_value;
@@ -310,13 +306,26 @@ public:
         else m_data = nullptr;
     }
 
-    bool contains(std::string_view key) const noexcept {
-        if (!is_object()) return false;
+    value* find(std::string_view key) noexcept {
+        if (!is_object()) return nullptr;
+        auto& obj = std::get<object_t>(m_data);
+        for (auto& pair : obj) {
+            if (pair.first == key) return &pair.second;
+        }
+        return nullptr;
+    }
+
+    const value* find(std::string_view key) const noexcept {
+        if (!is_object()) return nullptr;
         const auto& obj = std::get<object_t>(m_data);
         for (const auto& pair : obj) {
-            if (pair.first == key) return true;
+            if (pair.first == key) return &pair.second;
         }
-        return false;
+        return nullptr;
+    }
+
+    bool contains(std::string_view key) const noexcept {
+        return find(key) != nullptr;
     }
 
     size_t count(std::string_view key) const noexcept {
@@ -392,6 +401,11 @@ public:
     // Array Indexing (mutable) -> automatically becomes array if null
     template <typename Int, typename std::enable_if_t<std::is_integral_v<Int>, int> = 0>
     value& operator[](Int index) {
+        if constexpr (std::is_signed_v<Int>) {
+            if (index < 0) {
+                throw out_of_range("Array index cannot be negative: " + std::to_string(index));
+            }
+        }
         if (is_null()) {
             m_data = array_t{};
         }
@@ -408,6 +422,11 @@ public:
 
     template <typename Int, typename std::enable_if_t<std::is_integral_v<Int>, int> = 0>
     const value& operator[](Int index) const {
+        if constexpr (std::is_signed_v<Int>) {
+            if (index < 0) {
+                throw out_of_range("Array index cannot be negative: " + std::to_string(index));
+            }
+        }
         return at(static_cast<size_t>(index));
     }
 
@@ -529,9 +548,28 @@ public:
         if (type() != other.type()) {
             // Compare integer vs unsigned vs float numerically if both are numbers
             if (is_number() && other.is_number()) {
+                if (is_number_integer() && other.is_number_unsigned()) {
+                    int64_t a = get<int64_t>();
+                    return (a >= 0) && (static_cast<uint64_t>(a) == other.get<uint64_t>());
+                }
+                if (is_number_unsigned() && other.is_number_integer()) {
+                    int64_t b = other.get<int64_t>();
+                    return (b >= 0) && (get<uint64_t>() == static_cast<uint64_t>(b));
+                }
                 return get<double>() == other.get<double>();
             }
             return false;
+        }
+        if (is_object()) {
+            const auto& obj1 = std::get<object_t>(m_data);
+            const auto& obj2 = std::get<object_t>(other.m_data);
+            if (obj1.size() != obj2.size()) return false;
+            if (obj1 == obj2) return true;
+            for (const auto& [k, v] : obj1) {
+                const value* other_v = other.find(k);
+                if (!other_v || *other_v != v) return false;
+            }
+            return true;
         }
         return m_data == other.m_data;
     }

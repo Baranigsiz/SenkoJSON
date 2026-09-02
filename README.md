@@ -14,6 +14,8 @@
   <a href="#-key-features">Key Features</a> •
   <a href="#-quick-reference--cheat-sheet">Quick Reference</a> •
   <a href="#-quick-start">Quick Start</a> •
+  <a href="#-jsonc-configuration-engine">JSONC</a> •
+  <a href="#-ndjson--json-lines-jsonl-streaming">JSONL</a> •
   <a href="#-binary-json-msgpack--cbor">Binary JSON</a> •
   <a href="#-jsonpath-rfc-9535">JSONPath</a> •
   <a href="#-json-schema-validation-draft-07">JSON Schema</a> •
@@ -48,9 +50,12 @@ Whether you're developing game engines, low-latency microservices, hardware conf
 - **🔍 RFC 9535 JSONPath Engine:** SQL-like querying with wildcards (`[*]`), recursive descent (`$..key`, `$..*`), array slices (`[0:3]`, `[::2]`), and conditional filters (`[?(@.price < 10)]`).
 - **🎯 RFC 6901 JSON Pointer & Flattening:** Query deep structures with `/store/book/0/author`, `doc.flatten()` and `doc.unflatten()`.
 - **🧬 Struct Reflection & STL Adapters:** Serialize and deserialize structs with up to 32 fields (`SENKO_BIND`), `std::optional`, `std::map`, `std::vector`, `std::pair`, `std::unordered_set<json>` out-of-the-box.
+- **⚡ SIMD Accelerated Scanning:** Hardware-accelerated 16-byte SSE2/AVX2 vector chunk scanning for lightning-fast plain string and whitespace parsing.
+- **🛠️ First-Class JSONC Engine:** Native support for C/C++ style comments (`//`, `/* */`) and trailing commas via `senko::jsonc::parse("config.jsonc")` and `""_jsonc`.
+- **🌊 NDJSON / JSON Lines (JSONL) Stream:** Zero-allocation line-by-line streaming engine (`senko::jsonl_reader`) tailored for Big Data, logs, and AI/LLM datasets.
+- **🎨 Rich Compiler-Grade Diagnostics:** Rust/Clang-style visual error snippets with exact line boxes and `~~~^~~~` underline pointers for effortless debugging.
 - **🧠 Memory-Efficient DOM:** Powered by compact `std::variant` tagged unions—no bloated node structures.
 - **🌐 Full UTF-8 & Surrogate Pairs:** Strict RFC 8259 compliance with UTF-16 surrogate pairs (`\uD83D\uDE00` -> 😀).
-- **🛠️ Permissive Config Mode:** Optional support for C/C++ style comments (`//`, `/* */`) and trailing commas for configuration files.
 - **🛡️ Rock-Solid Reliability:** 100% test coverage across multiple platforms and compilers (GCC, Clang, MSVC).
 
 ---
@@ -60,9 +65,11 @@ Whether you're developing game engines, low-latency microservices, hardware conf
 | Category | Methods / Functions | Example Usage |
 | :--- | :--- | :--- |
 | **Parsing & File I/O** | `json::parse()`, `json::parse_file()`, `""_json` | `json j = json::parse(str);`, `json j = "{\"a\":1}"_json;` |
+| **JSONC (Configs with Comments)** | `jsonc::parse()`, `jsonc::parse_file()`, `""_jsonc` | `json j = senko::jsonc::parse_file("config.jsonc");` |
+| **JSONL / NDJSON Streaming** | `jsonl_reader`, `jsonl::from_file()` | `for (auto doc : senko::jsonl::from_file("data.jsonl")) { ... }` |
 | **Dumping & Output** | `dump(indent)`, `dump_file(path, indent)`, `operator<<` | `std::string s = j.dump(4);`, `j.dump_file("out.json", 2);` |
 | **Type Inspection** | `is_null()`, `is_boolean()`, `is_number()`, `is_string()`, `is_array()`, `is_object()` | `if (j["age"].is_number()) { ... }` |
-| **Element Access** | `operator[]`, `at()`, `get<T>()`, `value_or(key, default)` | `int x = j["count"].get<int>();`, `std::string s = j.value_or("k", "fallback");` |
+| **Element Access** | `operator[]`, `at()`, `find()`, `get<T>()`, `value_or(key, default)` | `int x = j["count"].get<int>();`, `std::string s = j.value_or("k", "fallback");` |
 | **Iterators & Views** | `begin()`, `end()`, `items()` (Structured Binding) | `for (auto& [k, v] : j.items()) { ... }` |
 | **Modifiers** | `push_back()`, `contains()`, `erase()`, `clear()`, `size()`, `empty()` | `j.push_back(42);`, `if (j.contains("key")) { ... }` |
 | **JSON Pointer (RFC 6901)** | `at_ptr()`, `operator[]`, `value_or(ptr, default)`, `flatten()`, `unflatten()` | `j["/user/name"_json_pointer]`, `json flat = j.flatten();` |
@@ -92,13 +99,17 @@ Whether you're developing game engines, low-latency microservices, hardware conf
 
 ### ⚡ Why SenkoJSON? (Feature & Performance Comparison)
 
-| Feature / Metric | SenkoJSON v2.3 | nlohmann/json | RapidJSON |
+| Feature / Metric | SenkoJSON v2.5.0 | nlohmann/json | RapidJSON |
 | :--- | :---: | :---: | :---: |
-| **Single-Header File Size** | 🏆 **~120 KB** (Compact & Lean) | 🐌 **~2.8 MB** (32,000 lines) | ~1.1 MB |
+| **Single-Header File Size** | 🏆 **~125 KB** (Compact & Lean) | 🐌 **~2.8 MB** (32,000 lines) | ~1.1 MB |
 | **Clean Build Compile Time** | ⚡ **~0.5 - 1.2s** (Ultra-Fast) | 🐢 **8 - 25s** (Heavy Template Bloat) | ~1.5s |
-| **Parse Throughput (Small JSON)** | ⚡ **~1.88M ops/s** | ~1.10M ops/s | ~1.95M ops/s |
+| **Hardware SIMD Acceleration** | ⚡ **Built-in (SSE2 / AVX2)** | ❌ No | ⚠️ Minimal SSE2 |
+| **Parse Throughput (Small JSON)** | ⚡ **~1.72M - 1.88M ops/s** | ~1.10M ops/s | ~1.95M ops/s |
+| **JSONC Engine (Comments & Commas)** | ✅ **Built-in (`senko::jsonc` & `""_jsonc`)** | ⚠️ Partial (flags) | ❌ No |
+| **JSONL / NDJSON Stream Reader** | ✅ **Built-in (`senko::jsonl_reader`)** | ❌ No | ❌ No |
+| **Compiler-Grade Error Diagnostics** | ✅ **Built-in (Rust/Clang-style visual box)** | ❌ Basic | ❌ Basic |
 | **JSONPath Engine (RFC 9535)** | ✅ **Built-in** | ❌ No | ❌ No |
-| **JSON Schema Validator (Draft-07)** | ✅ **Built-in (128M ops/s)** | ❌ External plugin required | ✅ Built-in |
+| **JSON Schema Validator (Draft-07)** | ✅ **Built-in (~150M ops/s)** | ❌ External plugin required | ✅ Built-in |
 | **Streaming Event SAX Parser** | ✅ **Built-in (`sax_parse`)** | ⚠️ Complex | ✅ Built-in |
 | **JSON Merge Patch (RFC 7396)** | ✅ **Built-in** | ✅ Built-in | ❌ No |
 | **Binary JSON (MessagePack & CBOR)** | ✅ **Built-in** | ✅ Built-in | ❌ JSON only |
@@ -392,6 +403,63 @@ int main() {
     // 2. RFC 7396 Merge Patch (REST API deltas)
     json delta = R"({"version": "2.0.0", "status": null})"_json;
     original.merge_patch_in_place(delta); // deletes 'status', updates 'version'
+
+    return 0;
+}
+```
+
+---
+
+## 🛠️ JSONC Configuration Engine
+
+Easily parse human-friendly configuration files containing C/C++ style comments (`//`, `/* */`) and trailing commas (like VS Code `settings.json` and `tsconfig.json`):
+
+```cpp
+#include <iostream>
+#include <senko/senko.hpp>
+
+using json = senko::json;
+using namespace senko::literals;
+
+int main() {
+    // 1. Direct file parsing
+    json cfg = senko::jsonc::parse_file("config.jsonc");
+
+    // 2. String literal with comments & trailing commas
+    auto doc = R"({
+        // Server Network Configuration
+        "server": {
+            "host": "127.0.0.1",
+            "port": 8080, /* Default HTTP port */
+        },
+        // Allowed origin list:
+        "origins": [
+            "https://localhost",
+            "https://senko.dev", // Trailing comma supported!
+        ],
+    })"_jsonc;
+
+    std::cout << "Host: " << doc["server"]["host"].get<std::string>() << "\n";
+    return 0;
+}
+```
+
+---
+
+## 🌊 NDJSON / JSON Lines (JSONL) Streaming
+
+Stream gigabyte-scale datasets and high-throughput server logs line-by-line with **zero heap reallocations** and minimal memory footprint:
+
+```cpp
+#include <iostream>
+#include <senko/senko.hpp>
+
+int main() {
+    // Stream through multi-GB dataset line-by-line (O(1) memory overhead)
+    for (const auto& record : senko::jsonl::from_file("training_data.jsonl")) {
+        std::cout << "Prompt: " << record["prompt"].get<std::string>()
+                  << " | Rating: " << record["rating"].get<int>() << "\n";
+    }
 
     return 0;
 }
