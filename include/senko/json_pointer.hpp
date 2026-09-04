@@ -55,6 +55,28 @@ public:
         if (!m_tokens.empty()) m_tokens.pop_back();
     }
 
+    static size_t parse_array_index(const std::string& token) {
+        if (token.empty()) {
+            throw pointer_error("Empty array index in JSON Pointer");
+        }
+        if (token == "-") {
+            throw pointer_error("Cannot resolve '-' array index token for reading");
+        }
+        if (token.size() > 1 && token[0] == '0') {
+            throw pointer_error("Leading zeros not permitted in JSON Pointer array index: '" + token + "'");
+        }
+        for (char c : token) {
+            if (c < '0' || c > '9') {
+                throw pointer_error("Invalid array index in JSON Pointer: '" + token + "'");
+            }
+        }
+        try {
+            return std::stoull(token);
+        } catch (...) {
+            throw pointer_error("Array index overflow in JSON Pointer: '" + token + "'");
+        }
+    }
+
     // Resolves pointer against a root JSON value (throws out_of_range / type_error / pointer_error)
     value& resolve(value& root) const {
         value* cur = &root;
@@ -65,15 +87,7 @@ public:
                 }
                 cur = &(*cur)[token];
             } else if (cur->is_array()) {
-                if (token == "-") {
-                    throw pointer_error("Cannot resolve '-' array index token for reading");
-                }
-                size_t idx = 0;
-                try {
-                    idx = std::stoull(token);
-                } catch (...) {
-                    throw pointer_error("Invalid array index in JSON Pointer: '" + token + "'");
-                }
+                size_t idx = parse_array_index(token);
                 cur = &cur->at(idx);
             } else {
                 throw type_error("Cannot navigate through primitive JSON value with token: '" + token + "'");
@@ -91,15 +105,7 @@ public:
                 }
                 cur = &cur->at(token);
             } else if (cur->is_array()) {
-                if (token == "-") {
-                    throw pointer_error("Cannot resolve '-' array index token for reading");
-                }
-                size_t idx = 0;
-                try {
-                    idx = std::stoull(token);
-                } catch (...) {
-                    throw pointer_error("Invalid array index in JSON Pointer: '" + token + "'");
-                }
+                size_t idx = parse_array_index(token);
                 cur = &cur->at(idx);
             } else {
                 throw type_error("Cannot navigate through primitive JSON value with token: '" + token + "'");

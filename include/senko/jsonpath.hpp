@@ -226,7 +226,11 @@ inline std::vector<path_segment> parse_jsonpath(std::string_view expr) {
                         filt.bool_val = false;
                     } else {
                         filt.is_number = true;
-                        filt.number_val = std::stod(raw_val);
+                        try {
+                            filt.number_val = std::stod(raw_val);
+                        } catch (...) {
+                            throw jsonpath_error("Invalid literal or number value in filter: '" + raw_val + "'");
+                        }
                     }
                 }
 
@@ -251,7 +255,11 @@ inline std::vector<path_segment> parse_jsonpath(std::string_view expr) {
                         size_t s_start = pos;
                         if (expr[pos] == '-') pos++;
                         while (pos < close_bracket && std::isdigit(static_cast<unsigned char>(expr[pos]))) pos++;
-                        sl.start = std::stoi(std::string(expr.substr(s_start, pos - s_start)));
+                        try {
+                            sl.start = std::stoi(std::string(expr.substr(s_start, pos - s_start)));
+                        } catch (...) {
+                            throw jsonpath_error("Invalid start index in array slice");
+                        }
                         sl.has_start = true;
                     }
 
@@ -268,7 +276,11 @@ inline std::vector<path_segment> parse_jsonpath(std::string_view expr) {
                         size_t e_start = pos;
                         if (expr[pos] == '-') pos++;
                         while (pos < close_bracket && std::isdigit(static_cast<unsigned char>(expr[pos]))) pos++;
-                        sl.end = std::stoi(std::string(expr.substr(e_start, pos - e_start)));
+                        try {
+                            sl.end = std::stoi(std::string(expr.substr(e_start, pos - e_start)));
+                        } catch (...) {
+                            throw jsonpath_error("Invalid end index in array slice");
+                        }
                         sl.has_end = true;
                     }
 
@@ -281,7 +293,11 @@ inline std::vector<path_segment> parse_jsonpath(std::string_view expr) {
                             size_t st_start = pos;
                             if (expr[pos] == '-') pos++;
                             while (pos < close_bracket && std::isdigit(static_cast<unsigned char>(expr[pos]))) pos++;
-                            sl.step = std::stoi(std::string(expr.substr(st_start, pos - st_start)));
+                            try {
+                                sl.step = std::stoi(std::string(expr.substr(st_start, pos - st_start)));
+                            } catch (...) {
+                                throw jsonpath_error("Invalid step in array slice");
+                            }
                             if (sl.step == 0) throw jsonpath_error("Step cannot be 0 in array slice");
                         }
                     }
@@ -294,8 +310,12 @@ inline std::vector<path_segment> parse_jsonpath(std::string_view expr) {
                     if (expr[i] == '-') i++;
                     while (i < len && std::isdigit(static_cast<unsigned char>(expr[i]))) i++;
                     if (start == i) throw jsonpath_error("Invalid index in array bracket");
-                    int idx = std::stoi(std::string(expr.substr(start, i - start)));
-                    segments.push_back({segment_type::array_index, "", idx, {}, {}});
+                    try {
+                        int idx = std::stoi(std::string(expr.substr(start, i - start)));
+                        segments.push_back({segment_type::array_index, "", idx, {}, {}});
+                    } catch (...) {
+                        throw jsonpath_error("Invalid index in array bracket");
+                    }
                 }
             }
 

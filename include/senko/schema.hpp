@@ -10,6 +10,8 @@
 #include <cmath>
 #include <algorithm>
 #include <sstream>
+#include <unordered_map>
+#include <memory>
 
 namespace senko {
 
@@ -70,7 +72,7 @@ public:
     bool validate(const value& instance, validation_result* result_out = nullptr) const {
         std::string err;
         std::string path = "#";
-        bool ok = validate_internal(m_schema, instance, path, err);
+        bool ok = validate_internal(m_schema, instance, path, err, 0);
 
         if (result_out) {
             result_out->is_valid = ok;
@@ -81,7 +83,23 @@ public:
     }
 
 private:
+    static constexpr size_t max_depth = 512;
     value m_schema;
+    mutable std::unordered_map<std::string, std::shared_ptr<std::regex>> m_regex_cache;
+
+    const std::regex* get_cached_regex(const std::string& pat) const {
+        auto it = m_regex_cache.find(pat);
+        if (it != m_regex_cache.end()) {
+            return it->second.get();
+        }
+        try {
+            auto re = std::make_shared<std::regex>(pat);
+            m_regex_cache.emplace(pat, re);
+            return re.get();
+        } catch (...) {
+            return nullptr;
+        }
+    }
 
     static bool check_type_match(std::string_view expected_type, const value& instance) {
         if (expected_type == "null") return instance.is_null();
@@ -101,7 +119,12 @@ private:
         return true;
     }
 
-    static bool validate_internal(const value& sch, const value& inst, std::string& path, std::string& err) {
+    bool validate_internal(const value& sch, const value& inst, std::string& path, std::string& err, size_t depth) const {
+        if (depth > max_depth) {
+            err = "Maximum schema nesting depth exceeded at " + path;
+            return false;
+        }
+
         if (!sch.is_object()) {
             if (sch.is_boolean()) {
                 if (!sch.get<bool>()) {
@@ -227,8 +250,8 @@ private:
             if (sch.contains("pattern") && sch.at("pattern").is_string()) {
                 std::string pat = sch.at("pattern").get<std::string>();
                 try {
-                    std::regex re(pat);
-                    if (!std::regex_search(s, re)) {
+                    auto re_ptr = get_cached_regex(pat);
+                    if (re_ptr && !std::regex_search(s, *re_ptr)) {
                         err = "String does not match regex pattern '" + pat + "' at " + path;
                         return false;
                     }
@@ -271,7 +294,7 @@ private:
                 if (items_sch.is_object() || items_sch.is_boolean()) {
                     for (size_t idx = 0; idx < arr.size(); ++idx) {
                         std::string sub_path = path + "/" + std::to_string(idx);
-                        if (!validate_internal(items_sch, arr[idx], sub_path, err)) {
+                        if (!validate_internal(items_sch, arr[idx], sub_path, err, depth + 1)) {
                             return false;
                         }
                     }
@@ -283,7 +306,7 @@ private:
                 for (size_t idx = 0; idx < arr.size(); ++idx) {
                     std::string dummy_err;
                     std::string sub_path = path + "/" + std::to_string(idx);
-                    if (validate_internal(contains_sch, arr[idx], sub_path, dummy_err)) {
+                    if (validate_internal(contains_sch, arr[idx], sub_path, dummy_err, depth + 1)) {
                         found = true;
                         break;
                     }
@@ -329,7 +352,7 @@ private:
                 for (const auto& [prop_name, prop_sch] : prop_schemas) {
                     if (inst.contains(prop_name)) {
                         std::string sub_path = path + "/" + prop_name;
-                        if (!validate_internal(prop_sch, inst.at(prop_name), sub_path, err)) {
+                        if (!validate_internal(prop_sch, inst.at(prop_name), sub_path, err, depth + 1)) {
                             return false;
                         }
                     }
@@ -347,7 +370,7 @@ private:
                             return false;
                         } else if (add_prop.is_object()) {
                             std::string sub_path = path + "/" + prop_name;
-                            if (!validate_internal(add_prop, val, sub_path, err)) {
+                            if (!validate_internal(add_prop, val, sub_path, err, depth + 1)) {
                                 return false;
                             }
                         }
@@ -359,7 +382,7 @@ private:
         // 8. Combinators: allOf, anyOf, oneOf, not
         if (sch.contains("allOf") && sch.at("allOf").is_array()) {
             for (const auto& sub_sch : sch.at("allOf").get_ref_array()) {
-                if (!validate_internal(sub_sch, inst, path, err)) {
+                if (!validate_internal(sub_sch, inst, path, err, depth + 1)) {
                     return false;
                 }
             }
@@ -368,7 +391,7 @@ private:
             bool any_ok = false;
             std::string dummy_err;
             for (const auto& sub_sch : sch.at("anyOf").get_ref_array()) {
-                if (validate_internal(sub_sch, inst, path, dummy_err)) {
+                if (validate_internal(sub_sch, inst, path, dummy_err, depth + 1)) {
                     any_ok = true;
                     break;
                 }
@@ -382,7 +405,7 @@ private:
             int match_count = 0;
             std::string dummy_err;
             for (const auto& sub_sch : sch.at("oneOf").get_ref_array()) {
-                if (validate_internal(sub_sch, inst, path, dummy_err)) {
+                if (validate_internal(sub_sch, inst, path, dummy_err, depth + 1)) {
                     match_count++;
                 }
             }
@@ -393,7 +416,7 @@ private:
         }
         if (sch.contains("not")) {
             std::string dummy_err;
-            if (validate_internal(sch.at("not"), inst, path, dummy_err)) {
+            if (validate_internal(sch.at("not"), inst, path, dummy_err, depth + 1)) {
                 err = "Instance matched schema specified in 'not' at " + path;
                 return false;
             }

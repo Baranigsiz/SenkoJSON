@@ -3,12 +3,12 @@
 /**
  * @file senko.hpp
  * @brief Master header for SenkoJSON - A lightning-fast, modern, header-only C++ JSON library.
- * @version 2.5.0
+ * @version 2.6.0
  * @license MIT
  */
 
 #define SENKO_VERSION_MAJOR 2
-#define SENKO_VERSION_MINOR 5
+#define SENKO_VERSION_MINOR 6
 #define SENKO_VERSION_PATCH 0
 
 #include "fwd.hpp"

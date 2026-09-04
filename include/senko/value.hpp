@@ -569,6 +569,10 @@ public:
                 const value* other_v = other.find(k);
                 if (!other_v || *other_v != v) return false;
             }
+            for (const auto& [k, v] : obj2) {
+                const value* this_v = find(k);
+                if (!this_v || *this_v != v) return false;
+            }
             return true;
         }
         return m_data == other.m_data;

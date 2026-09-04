@@ -93,6 +93,9 @@ TEST_CASE("JSONPath - Filter Expressions [?(@.field op val)]") {
     auto keyboard = doc.jsonpath("$.products[?(@.name == 'Keyboard')].price");
     CHECK_EQ(keyboard.size(), 1);
     CHECK_EQ(keyboard[0].get<double>(), 45.0);
+
+    // Invalid unquoted literal that cannot be parsed as number or bool throws jsonpath_error
+    CHECK_THROWS(doc.jsonpath("$.products[?(@.price < not_a_number)]"));
 }
 
 TEST_CASE("JSONPath - Array Slices [start:end:step]") {

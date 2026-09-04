@@ -66,3 +66,31 @@ TEST_CASE("Struct Binding - Large Struct (20 Fields)") {
     CHECK_EQ(loaded.f20, 20);
 }
 
+class SecretAgent {
+private:
+    std::string codename;
+    int clearance_level;
+    SENKO_BIND_INTRUSIVE(SecretAgent, codename, clearance_level)
+
+public:
+    SecretAgent() = default;
+    SecretAgent(std::string name, int clearance)
+        : codename(std::move(name)), clearance_level(clearance) {}
+
+    const std::string& get_codename() const { return codename; }
+    int get_clearance() const { return clearance_level; }
+};
+
+TEST_CASE("Struct Binding - Intrusive Private Fields (SENKO_BIND_INTRUSIVE)") {
+    SecretAgent agent{"007", 9};
+    json j = agent;
+    CHECK(j.is_object());
+    CHECK_EQ(j["codename"].get<std::string>(), "007");
+    CHECK_EQ(j["clearance_level"].get<int>(), 9);
+
+    SecretAgent restored = j.get<SecretAgent>();
+    CHECK_EQ(restored.get_codename(), "007");
+    CHECK_EQ(restored.get_clearance(), 9);
+}
+
+

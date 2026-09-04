@@ -174,11 +174,21 @@ inline value value::parse(std::istream& is, bool allow_comments, bool allow_trai
 }
 
 inline value value::parse_file(const std::string& filepath, bool allow_comments, bool allow_trailing_comma) {
-    std::ifstream file(filepath, std::ios::in | std::ios::binary);
+    std::ifstream file(filepath, std::ios::in | std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
         throw parse_error("Failed to open file: " + filepath);
     }
-    return parse(file, allow_comments, allow_trailing_comma);
+    auto size = file.tellg();
+    if (size < 0) {
+        throw parse_error("Failed to read file size: " + filepath);
+    }
+    std::string str;
+    if (size > 0) {
+        str.resize(static_cast<size_t>(size));
+        file.seekg(0, std::ios::beg);
+        file.read(str.data(), size);
+    }
+    return parse(str, allow_comments, allow_trailing_comma);
 }
 
 } // namespace senko

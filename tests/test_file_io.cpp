@@ -32,3 +32,28 @@ TEST_CASE("File I/O - Dump and Parse File") {
     // Non-existent file should throw
     CHECK_THROWS(json::parse_file("non_existent_file_12345.json"));
 }
+
+TEST_CASE("File I/O - Stream-Based Serialization") {
+    json doc = {
+        {"name", "Senko"},
+        {"age", 800},
+        {"nested", {{"fluffy", true}, {"tail_count", 1}}},
+        {"list", {10, 20, 30}}
+    };
+
+    // 1. Compact stream serialization
+    std::ostringstream oss_compact;
+    doc.dump(oss_compact, -1);
+    CHECK_EQ(oss_compact.str(), doc.dump(-1));
+
+    // 2. Indented stream serialization (indent = 2)
+    std::ostringstream oss_indented;
+    doc.dump(oss_indented, 2);
+    CHECK_EQ(oss_indented.str(), doc.dump(2));
+
+    // 3. Operator << output
+    std::ostringstream oss_op;
+    oss_op << doc;
+    CHECK_EQ(oss_op.str(), doc.dump());
+}
+

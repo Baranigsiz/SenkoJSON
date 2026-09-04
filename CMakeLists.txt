@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(SenkoJSON VERSION 2.5.0 LANGUAGES CXX)
+project(SenkoJSON VERSION 2.6.0 LANGUAGES CXX)
 
 # ==============================================================================
 # C++ Standard & Compiler Flags
@@ -107,6 +107,9 @@ endif()
 if(SENKO_BUILD_BENCHMARKS)
     add_executable(senko_benchmarks benchmarks/benchmark_suite.cpp)
     target_link_libraries(senko_benchmarks PRIVATE senko::senko)
+
+    add_executable(senko_comparative_proof benchmarks/comparative_proof.cpp)
+    target_link_libraries(senko_comparative_proof PRIVATE senko::senko)
 endif()
 
 # ==============================================================================

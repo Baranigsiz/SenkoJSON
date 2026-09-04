@@ -59,6 +59,12 @@ TEST_CASE("JSON Patch - Move, Copy, Test Operations") {
     CHECK(!doc.contains("copied"));
     CHECK_EQ(doc["moved"].get<std::string>(), "value123");
 
+    // Move operation: cannot move into a child location (RFC 6902)
+    json patch_invalid_move = json::parse(R"([
+        {"op": "move", "from": "/moved", "path": "/moved/child"}
+    ])");
+    CHECK_THROWS(doc.patch_in_place(patch_invalid_move));
+
     // Test operation (success)
     json patch_test_pass = json::parse(R"([
         {"op": "test", "path": "/moved", "value": "value123"}

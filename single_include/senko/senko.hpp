@@ -2,7 +2,7 @@
  * SenkoJSON - Single Header Amalgamation
  * https://github.com/Baranigsiz/SenkoJSON
  * 
- * Version: 2.5.0
+ * Version: 2.6.0
  * License: MIT
  * 
  * Lightning-fast, zero-overhead modern C++17/20 JSON library with MessagePack, CBOR, JSONPath, JSON Schema & SAX Streaming.
@@ -12,7 +12,7 @@
 #define SENKO_SINGLE_AMALGAMATION_HPP
 
 #define SENKO_VERSION_MAJOR 2
-#define SENKO_VERSION_MINOR 5
+#define SENKO_VERSION_MINOR 6
 #define SENKO_VERSION_PATCH 0
 
 
@@ -755,6 +755,10 @@ public:
                 const value* other_v = other.find(k);
                 if (!other_v || *other_v != v) return false;
             }
+            for (const auto& [k, v] : obj2) {
+                const value* this_v = find(k);
+                if (!this_v || *this_v != v) return false;
+            }
             return true;
         }
         return m_data == other.m_data;
@@ -1433,13 +1437,6 @@ public:
             if (c < 0x20) {
                 throw_parse_error("Unescaped control character in string");
             }
-            if (c == '\n') {
-                m_line++;
-                m_col = 1;
-            } else {
-                m_col++;
-            }
-            m_pos++;
         }
 
         throw_parse_error("Unterminated string literal", start_pos);
@@ -1799,11 +1796,21 @@ inline value value::parse(std::istream& is, bool allow_comments, bool allow_trai
 }
 
 inline value value::parse_file(const std::string& filepath, bool allow_comments, bool allow_trailing_comma) {
-    std::ifstream file(filepath, std::ios::in | std::ios::binary);
+    std::ifstream file(filepath, std::ios::in | std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
         throw parse_error("Failed to open file: " + filepath);
     }
-    return parse(file, allow_comments, allow_trailing_comma);
+    auto size = file.tellg();
+    if (size < 0) {
+        throw parse_error("Failed to read file size: " + filepath);
+    }
+    std::string str;
+    if (size > 0) {
+        str.resize(static_cast<size_t>(size));
+        file.seekg(0, std::ios::beg);
+        file.read(str.data(), size);
+    }
+    return parse(str, allow_comments, allow_trailing_comma);
 }
 
 } // namespace senko
@@ -1832,9 +1839,81 @@ namespace senko {
 
 namespace detail {
 
-class fast_string_serializer {
+struct string_writer {
+    std::string& out;
+
+    explicit string_writer(std::string& s) : out(s) {}
+
+    void push_back(char c) {
+        out.push_back(c);
+    }
+
+    void append(const char* data, size_t len) {
+        out.append(data, len);
+    }
+
+    void append(std::string_view sv) {
+        out.append(sv.data(), sv.size());
+    }
+
+    void append_n(size_t n, char c) {
+        out.append(n, c);
+    }
+};
+
+struct stream_writer {
+    std::ostream& os;
+    char buf[4096];
+    size_t pos = 0;
+
+    explicit stream_writer(std::ostream& s) : os(s) {}
+
+    ~stream_writer() {
+        flush();
+    }
+
+    void flush() {
+        if (pos > 0) {
+            os.write(buf, pos);
+            pos = 0;
+        }
+    }
+
+    void push_back(char c) {
+        if (pos >= sizeof(buf)) flush();
+        buf[pos++] = c;
+    }
+
+    void append(const char* data, size_t len) {
+        if (len >= sizeof(buf)) {
+            flush();
+            os.write(data, len);
+        } else {
+            if (pos + len > sizeof(buf)) flush();
+            std::memcpy(buf + pos, data, len);
+            pos += len;
+        }
+    }
+
+    void append(std::string_view sv) {
+        append(sv.data(), sv.size());
+    }
+
+    void append_n(size_t n, char c) {
+        while (n > 0) {
+            if (pos >= sizeof(buf)) flush();
+            size_t chunk = (std::min)(n, sizeof(buf) - pos);
+            std::memset(buf + pos, c, chunk);
+            pos += chunk;
+            n -= chunk;
+        }
+    }
+};
+
+template <typename Writer>
+class basic_serializer {
 public:
-    explicit fast_string_serializer(std::string& out, int indent = -1)
+    explicit basic_serializer(Writer& out, int indent = -1)
         : m_out(out), m_indent(indent), m_depth(0) {}
 
     void dump(const value& v) {
@@ -1900,14 +1979,14 @@ public:
     }
 
 private:
-    std::string& m_out;
+    Writer& m_out;
     int m_indent;
     int m_depth;
 
     void indent_newline() {
         if (m_indent >= 0) {
             m_out.push_back('\n');
-            m_out.append(static_cast<size_t>(m_depth * m_indent), ' ');
+            m_out.append_n(static_cast<size_t>(m_depth * m_indent), ' ');
         }
     }
 
@@ -2002,6 +2081,8 @@ private:
     }
 };
 
+using fast_string_serializer = basic_serializer<string_writer>;
+
 } // namespace detail
 
 class serializer {
@@ -2010,16 +2091,23 @@ public:
         : m_os(os), m_indent(indent) {}
 
     void dump(const value& v) {
-        std::string s = dump_to_string(v, m_indent);
-        m_os << s;
+        dump_to_stream(v, m_os, m_indent);
     }
 
     static std::string dump_to_string(const value& v, int indent = -1) {
         std::string out;
         out.reserve(256);
-        detail::fast_string_serializer s(out, indent);
+        detail::string_writer writer(out);
+        detail::basic_serializer<detail::string_writer> s(writer, indent);
         s.dump(v);
         return out;
+    }
+
+    static void dump_to_stream(const value& v, std::ostream& os, int indent = -1) {
+        detail::stream_writer writer(os);
+        detail::basic_serializer<detail::stream_writer> s(writer, indent);
+        s.dump(v);
+        writer.flush();
     }
 
     static void dump_to_file(const value& v, const std::string& filepath, int indent = -1) {
@@ -2027,8 +2115,7 @@ public:
         if (!file.is_open()) {
             throw serializer_error("Failed to open file for writing: " + filepath);
         }
-        std::string s = dump_to_string(v, indent);
-        file.write(s.data(), s.size());
+        dump_to_stream(v, file, indent);
     }
 
 private:
@@ -2042,8 +2129,7 @@ inline std::string value::dump(int indent) const {
 }
 
 inline void value::dump(std::ostream& os, int indent) const {
-    std::string s = dump(indent);
-    os << s;
+    serializer::dump_to_stream(*this, os, indent);
 }
 
 inline void value::dump_file(const std::string& filepath, int indent) const {
@@ -2051,8 +2137,7 @@ inline void value::dump_file(const std::string& filepath, int indent) const {
 }
 
 inline std::ostream& operator<<(std::ostream& os, const value& j) {
-    std::string s = j.dump(-1);
-    os << s;
+    serializer::dump_to_stream(j, os, -1);
     return os;
 }
 
@@ -2120,6 +2205,28 @@ public:
         if (!m_tokens.empty()) m_tokens.pop_back();
     }
 
+    static size_t parse_array_index(const std::string& token) {
+        if (token.empty()) {
+            throw pointer_error("Empty array index in JSON Pointer");
+        }
+        if (token == "-") {
+            throw pointer_error("Cannot resolve '-' array index token for reading");
+        }
+        if (token.size() > 1 && token[0] == '0') {
+            throw pointer_error("Leading zeros not permitted in JSON Pointer array index: '" + token + "'");
+        }
+        for (char c : token) {
+            if (c < '0' || c > '9') {
+                throw pointer_error("Invalid array index in JSON Pointer: '" + token + "'");
+            }
+        }
+        try {
+            return std::stoull(token);
+        } catch (...) {
+            throw pointer_error("Array index overflow in JSON Pointer: '" + token + "'");
+        }
+    }
+
     // Resolves pointer against a root JSON value (throws out_of_range / type_error / pointer_error)
     value& resolve(value& root) const {
         value* cur = &root;
@@ -2130,15 +2237,7 @@ public:
                 }
                 cur = &(*cur)[token];
             } else if (cur->is_array()) {
-                if (token == "-") {
-                    throw pointer_error("Cannot resolve '-' array index token for reading");
-                }
-                size_t idx = 0;
-                try {
-                    idx = std::stoull(token);
-                } catch (...) {
-                    throw pointer_error("Invalid array index in JSON Pointer: '" + token + "'");
-                }
+                size_t idx = parse_array_index(token);
                 cur = &cur->at(idx);
             } else {
                 throw type_error("Cannot navigate through primitive JSON value with token: '" + token + "'");
@@ -2156,15 +2255,7 @@ public:
                 }
                 cur = &cur->at(token);
             } else if (cur->is_array()) {
-                if (token == "-") {
-                    throw pointer_error("Cannot resolve '-' array index token for reading");
-                }
-                size_t idx = 0;
-                try {
-                    idx = std::stoull(token);
-                } catch (...) {
-                    throw pointer_error("Invalid array index in JSON Pointer: '" + token + "'");
-                }
+                size_t idx = parse_array_index(token);
                 cur = &cur->at(idx);
             } else {
                 throw type_error("Cannot navigate through primitive JSON value with token: '" + token + "'");
@@ -2577,7 +2668,11 @@ inline std::vector<path_segment> parse_jsonpath(std::string_view expr) {
                         filt.bool_val = false;
                     } else {
                         filt.is_number = true;
-                        filt.number_val = std::stod(raw_val);
+                        try {
+                            filt.number_val = std::stod(raw_val);
+                        } catch (...) {
+                            throw jsonpath_error("Invalid literal or number value in filter: '" + raw_val + "'");
+                        }
                     }
                 }
 
@@ -2602,7 +2697,11 @@ inline std::vector<path_segment> parse_jsonpath(std::string_view expr) {
                         size_t s_start = pos;
                         if (expr[pos] == '-') pos++;
                         while (pos < close_bracket && std::isdigit(static_cast<unsigned char>(expr[pos]))) pos++;
-                        sl.start = std::stoi(std::string(expr.substr(s_start, pos - s_start)));
+                        try {
+                            sl.start = std::stoi(std::string(expr.substr(s_start, pos - s_start)));
+                        } catch (...) {
+                            throw jsonpath_error("Invalid start index in array slice");
+                        }
                         sl.has_start = true;
                     }
 
@@ -2619,7 +2718,11 @@ inline std::vector<path_segment> parse_jsonpath(std::string_view expr) {
                         size_t e_start = pos;
                         if (expr[pos] == '-') pos++;
                         while (pos < close_bracket && std::isdigit(static_cast<unsigned char>(expr[pos]))) pos++;
-                        sl.end = std::stoi(std::string(expr.substr(e_start, pos - e_start)));
+                        try {
+                            sl.end = std::stoi(std::string(expr.substr(e_start, pos - e_start)));
+                        } catch (...) {
+                            throw jsonpath_error("Invalid end index in array slice");
+                        }
                         sl.has_end = true;
                     }
 
@@ -2632,7 +2735,11 @@ inline std::vector<path_segment> parse_jsonpath(std::string_view expr) {
                             size_t st_start = pos;
                             if (expr[pos] == '-') pos++;
                             while (pos < close_bracket && std::isdigit(static_cast<unsigned char>(expr[pos]))) pos++;
-                            sl.step = std::stoi(std::string(expr.substr(st_start, pos - st_start)));
+                            try {
+                                sl.step = std::stoi(std::string(expr.substr(st_start, pos - st_start)));
+                            } catch (...) {
+                                throw jsonpath_error("Invalid step in array slice");
+                            }
                             if (sl.step == 0) throw jsonpath_error("Step cannot be 0 in array slice");
                         }
                     }
@@ -2645,8 +2752,12 @@ inline std::vector<path_segment> parse_jsonpath(std::string_view expr) {
                     if (expr[i] == '-') i++;
                     while (i < len && std::isdigit(static_cast<unsigned char>(expr[i]))) i++;
                     if (start == i) throw jsonpath_error("Invalid index in array bracket");
-                    int idx = std::stoi(std::string(expr.substr(start, i - start)));
-                    segments.push_back({segment_type::array_index, "", idx, {}, {}});
+                    try {
+                        int idx = std::stoi(std::string(expr.substr(start, i - start)));
+                        segments.push_back({segment_type::array_index, "", idx, {}, {}});
+                    } catch (...) {
+                        throw jsonpath_error("Invalid index in array bracket");
+                    }
                 }
             }
 
@@ -2933,6 +3044,13 @@ inline void apply_patch_op(value& doc, const value& op_obj) {
 
         if (from_ptr.empty()) {
             throw patch_error("Cannot move from root JSON document");
+        }
+
+        // RFC 6902: "from" location MUST NOT be a proper prefix of "path"
+        if (path_str.size() > from_str.size() &&
+            path_str.compare(0, from_str.size(), from_str) == 0 &&
+            path_str[from_str.size()] == '/') {
+            throw patch_error("'from' location cannot be a proper prefix of 'path' in move operation");
         }
 
         // Value to move
@@ -3320,10 +3438,15 @@ inline void serialize_msgpack_impl(const value& v, std::vector<uint8_t>& out) {
 
 class msgpack_reader {
 public:
+    static constexpr size_t max_depth = 512;
+
     msgpack_reader(const uint8_t* data, size_t size)
-        : m_data(data), m_size(size), m_pos(0) {}
+        : m_data(data), m_size(size), m_pos(0), m_depth(0) {}
 
     value parse() {
+        if (m_depth > max_depth) {
+            throw msgpack_error("Maximum MessagePack nesting depth exceeded (potential stack overflow)");
+        }
         if (m_pos >= m_size) {
             throw msgpack_error("Unexpected end of MessagePack input");
         }
@@ -3354,6 +3477,23 @@ public:
             case 0xC0: return value(nullptr);
             case 0xC2: return value(false);
             case 0xC3: return value(true);
+            case 0xC4: { // bin 8
+                ensure_bytes(1);
+                size_t len = m_data[m_pos++];
+                return parse_string_bytes(len);
+            }
+            case 0xC5: { // bin 16
+                ensure_bytes(2);
+                size_t len = read_u16_be(&m_data[m_pos]);
+                m_pos += 2;
+                return parse_string_bytes(len);
+            }
+            case 0xC6: { // bin 32
+                ensure_bytes(4);
+                size_t len = read_u32_be(&m_data[m_pos]);
+                m_pos += 4;
+                return parse_string_bytes(len);
+            }
             case 0xCA: { // float 32
                 ensure_bytes(4);
                 uint32_t raw = read_u32_be(&m_data[m_pos]);
@@ -3464,6 +3604,7 @@ private:
     const uint8_t* m_data;
     size_t m_size;
     size_t m_pos;
+    size_t m_depth;
 
     void ensure_bytes(size_t n) {
         if (m_pos + n > m_size) {
@@ -3484,9 +3625,11 @@ private:
         }
         value::array_t arr;
         arr.reserve((std::min)(len, size_t(4096)));
+        m_depth++;
         for (size_t i = 0; i < len; ++i) {
             arr.push_back(parse());
         }
+        m_depth--;
         return value(std::move(arr));
     }
 
@@ -3496,6 +3639,7 @@ private:
         }
         value::object_t obj;
         obj.reserve((std::min)(len, size_t(4096)));
+        m_depth++;
         for (size_t i = 0; i < len; ++i) {
             value key_v = parse();
             if (!key_v.is_string()) {
@@ -3504,6 +3648,7 @@ private:
             value val_v = parse();
             obj.emplace_back(std::move(key_v.get_ref_string()), std::move(val_v));
         }
+        m_depth--;
         return value(std::move(obj));
     }
 };
@@ -3553,6 +3698,7 @@ inline value from_msgpack(std::string_view bytes) {
 #include <cstring>
 #include <string_view>
 #include <limits>
+#include <cmath>
 
 namespace senko {
 
@@ -3562,6 +3708,30 @@ public:
 };
 
 namespace detail {
+
+inline double decode_half_float(uint16_t raw) {
+    uint16_t sign = (raw >> 15) & 0x0001;
+    uint16_t exp  = (raw >> 10) & 0x001F;
+    uint16_t mant = raw & 0x03FF;
+
+    double val = 0.0;
+    if (exp == 0) {
+        if (mant == 0) {
+            val = 0.0;
+        } else {
+            val = std::ldexp(static_cast<double>(mant), -24);
+        }
+    } else if (exp == 31) {
+        if (mant == 0) {
+            val = std::numeric_limits<double>::infinity();
+        } else {
+            val = std::numeric_limits<double>::quiet_NaN();
+        }
+    } else {
+        val = std::ldexp(static_cast<double>(1024 + mant), static_cast<int>(exp) - 25);
+    }
+    return sign ? -val : val;
+}
 
 inline void cbor_write_type_and_val(std::vector<uint8_t>& out, uint8_t major, uint64_t val) {
     uint8_t m = static_cast<uint8_t>(major << 5);
@@ -3650,10 +3820,15 @@ inline void serialize_cbor_impl(const value& v, std::vector<uint8_t>& out) {
 
 class cbor_reader {
 public:
+    static constexpr size_t max_depth = 512;
+
     cbor_reader(const uint8_t* data, size_t size)
-        : m_data(data), m_size(size), m_pos(0) {}
+        : m_data(data), m_size(size), m_pos(0), m_depth(0) {}
 
     value parse() {
+        if (m_depth > max_depth) {
+            throw cbor_error("Maximum CBOR nesting depth exceeded (potential stack overflow)");
+        }
         if (m_pos >= m_size) {
             throw cbor_error("Unexpected end of CBOR input");
         }
@@ -3687,9 +3862,11 @@ public:
                 }
                 value::array_t arr;
                 arr.reserve(static_cast<size_t>((std::min)(val, uint64_t(4096))));
+                m_depth++;
                 for (size_t i = 0; i < val; ++i) {
                     arr.push_back(parse());
                 }
+                m_depth--;
                 return value(std::move(arr));
             }
             case 5: { // Map
@@ -3698,6 +3875,7 @@ public:
                 }
                 value::object_t obj;
                 obj.reserve(static_cast<size_t>((std::min)(val, uint64_t(4096))));
+                m_depth++;
                 for (size_t i = 0; i < val; ++i) {
                     value key_v = parse();
                     if (!key_v.is_string()) {
@@ -3706,12 +3884,16 @@ public:
                     value val_v = parse();
                     obj.emplace_back(std::move(key_v.get_ref_string()), std::move(val_v));
                 }
+                m_depth--;
                 return value(std::move(obj));
             }
             case 7: { // Simple / Float
                 if (info == 20) return value(false);
                 if (info == 21) return value(true);
                 if (info == 22) return value(nullptr);
+                if (info == 25) { // float 16 (half-precision)
+                    return value(decode_half_float(static_cast<uint16_t>(val)));
+                }
                 if (info == 26) { // float 32
                     uint32_t raw = static_cast<uint32_t>(val);
                     float f = 0.0f;
@@ -3735,6 +3917,7 @@ private:
     const uint8_t* m_data;
     size_t m_size;
     size_t m_pos;
+    size_t m_depth;
 
     void ensure_bytes(size_t n) {
         if (m_pos + n > m_size) {
@@ -3925,10 +4108,36 @@ namespace senko {
         SENKO_EXPAND(SENKO_CONCAT(SENKO_FROM_, SENKO_NARGS(__VA_ARGS__))(v, __VA_ARGS__)) \
     }
 
+/**
+ * @brief Macro to define struct/class serialization & deserialization functions inside a class definition.
+ * Allows serialization of private and protected members via friend functions.
+ * Usage:
+ * class User {
+ * private:
+ *     std::string name;
+ *     int age;
+ *     SENKO_BIND_INTRUSIVE(User, name, age)
+ * };
+ */
+#define SENKO_BIND_INTRUSIVE(Type, ...) \
+    friend void to_json(::senko::value& j, const Type& v) { \
+        j = ::senko::value::object(); \
+        SENKO_EXPAND(SENKO_CONCAT(SENKO_TO_, SENKO_NARGS(__VA_ARGS__))(v, __VA_ARGS__)) \
+    } \
+    friend void from_json(const ::senko::value& j, Type& v) { \
+        if (!j.is_object()) { \
+            throw ::senko::type_error("Expected object for struct deserialization, got " + std::string(j.type_name())); \
+        } \
+        SENKO_EXPAND(SENKO_CONCAT(SENKO_FROM_, SENKO_NARGS(__VA_ARGS__))(v, __VA_ARGS__)) \
+    }
+
 // Aliases for convenience & backwards compatibility
 #define SENKO_DEFINE_TYPE(Type, ...) SENKO_BIND(Type, __VA_ARGS__)
+#define SENKO_DEFINE_TYPE_INTRUSIVE(Type, ...) SENKO_BIND_INTRUSIVE(Type, __VA_ARGS__)
 #define COREJSON_BIND(Type, ...) SENKO_BIND(Type, __VA_ARGS__)
 #define COREJSON_DEFINE_TYPE(Type, ...) SENKO_BIND(Type, __VA_ARGS__)
+#define COREJSON_BIND_INTRUSIVE(Type, ...) SENKO_BIND_INTRUSIVE(Type, __VA_ARGS__)
+#define COREJSON_DEFINE_TYPE_INTRUSIVE(Type, ...) SENKO_BIND_INTRUSIVE(Type, __VA_ARGS__)
 
 } // namespace senko
 
@@ -3949,6 +4158,8 @@ namespace senko {
 #include <cmath>
 #include <algorithm>
 #include <sstream>
+#include <unordered_map>
+#include <memory>
 
 namespace senko {
 
@@ -4009,7 +4220,7 @@ public:
     bool validate(const value& instance, validation_result* result_out = nullptr) const {
         std::string err;
         std::string path = "#";
-        bool ok = validate_internal(m_schema, instance, path, err);
+        bool ok = validate_internal(m_schema, instance, path, err, 0);
 
         if (result_out) {
             result_out->is_valid = ok;
@@ -4020,7 +4231,23 @@ public:
     }
 
 private:
+    static constexpr size_t max_depth = 512;
     value m_schema;
+    mutable std::unordered_map<std::string, std::shared_ptr<std::regex>> m_regex_cache;
+
+    const std::regex* get_cached_regex(const std::string& pat) const {
+        auto it = m_regex_cache.find(pat);
+        if (it != m_regex_cache.end()) {
+            return it->second.get();
+        }
+        try {
+            auto re = std::make_shared<std::regex>(pat);
+            m_regex_cache.emplace(pat, re);
+            return re.get();
+        } catch (...) {
+            return nullptr;
+        }
+    }
 
     static bool check_type_match(std::string_view expected_type, const value& instance) {
         if (expected_type == "null") return instance.is_null();
@@ -4040,7 +4267,12 @@ private:
         return true;
     }
 
-    static bool validate_internal(const value& sch, const value& inst, std::string& path, std::string& err) {
+    bool validate_internal(const value& sch, const value& inst, std::string& path, std::string& err, size_t depth) const {
+        if (depth > max_depth) {
+            err = "Maximum schema nesting depth exceeded at " + path;
+            return false;
+        }
+
         if (!sch.is_object()) {
             if (sch.is_boolean()) {
                 if (!sch.get<bool>()) {
@@ -4166,8 +4398,8 @@ private:
             if (sch.contains("pattern") && sch.at("pattern").is_string()) {
                 std::string pat = sch.at("pattern").get<std::string>();
                 try {
-                    std::regex re(pat);
-                    if (!std::regex_search(s, re)) {
+                    auto re_ptr = get_cached_regex(pat);
+                    if (re_ptr && !std::regex_search(s, *re_ptr)) {
                         err = "String does not match regex pattern '" + pat + "' at " + path;
                         return false;
                     }
@@ -4210,7 +4442,7 @@ private:
                 if (items_sch.is_object() || items_sch.is_boolean()) {
                     for (size_t idx = 0; idx < arr.size(); ++idx) {
                         std::string sub_path = path + "/" + std::to_string(idx);
-                        if (!validate_internal(items_sch, arr[idx], sub_path, err)) {
+                        if (!validate_internal(items_sch, arr[idx], sub_path, err, depth + 1)) {
                             return false;
                         }
                     }
@@ -4222,7 +4454,7 @@ private:
                 for (size_t idx = 0; idx < arr.size(); ++idx) {
                     std::string dummy_err;
                     std::string sub_path = path + "/" + std::to_string(idx);
-                    if (validate_internal(contains_sch, arr[idx], sub_path, dummy_err)) {
+                    if (validate_internal(contains_sch, arr[idx], sub_path, dummy_err, depth + 1)) {
                         found = true;
                         break;
                     }
@@ -4268,7 +4500,7 @@ private:
                 for (const auto& [prop_name, prop_sch] : prop_schemas) {
                     if (inst.contains(prop_name)) {
                         std::string sub_path = path + "/" + prop_name;
-                        if (!validate_internal(prop_sch, inst.at(prop_name), sub_path, err)) {
+                        if (!validate_internal(prop_sch, inst.at(prop_name), sub_path, err, depth + 1)) {
                             return false;
                         }
                     }
@@ -4286,7 +4518,7 @@ private:
                             return false;
                         } else if (add_prop.is_object()) {
                             std::string sub_path = path + "/" + prop_name;
-                            if (!validate_internal(add_prop, val, sub_path, err)) {
+                            if (!validate_internal(add_prop, val, sub_path, err, depth + 1)) {
                                 return false;
                             }
                         }
@@ -4298,7 +4530,7 @@ private:
         // 8. Combinators: allOf, anyOf, oneOf, not
         if (sch.contains("allOf") && sch.at("allOf").is_array()) {
             for (const auto& sub_sch : sch.at("allOf").get_ref_array()) {
-                if (!validate_internal(sub_sch, inst, path, err)) {
+                if (!validate_internal(sub_sch, inst, path, err, depth + 1)) {
                     return false;
                 }
             }
@@ -4307,7 +4539,7 @@ private:
             bool any_ok = false;
             std::string dummy_err;
             for (const auto& sub_sch : sch.at("anyOf").get_ref_array()) {
-                if (validate_internal(sub_sch, inst, path, dummy_err)) {
+                if (validate_internal(sub_sch, inst, path, dummy_err, depth + 1)) {
                     any_ok = true;
                     break;
                 }
@@ -4321,7 +4553,7 @@ private:
             int match_count = 0;
             std::string dummy_err;
             for (const auto& sub_sch : sch.at("oneOf").get_ref_array()) {
-                if (validate_internal(sub_sch, inst, path, dummy_err)) {
+                if (validate_internal(sub_sch, inst, path, dummy_err, depth + 1)) {
                     match_count++;
                 }
             }
@@ -4332,7 +4564,7 @@ private:
         }
         if (sch.contains("not")) {
             std::string dummy_err;
-            if (validate_internal(sch.at("not"), inst, path, dummy_err)) {
+            if (validate_internal(sch.at("not"), inst, path, dummy_err, depth + 1)) {
                 err = "Instance matched schema specified in 'not' at " + path;
                 return false;
             }

@@ -65,6 +65,10 @@ TEST_CASE("Containers - Object Operations") {
     json o2 = {{"b", 2}, {"a", 1}};
     CHECK(o1 == o2);
 
+    json o3 = {{"a", 1}, {"c", 2}};
+    CHECK(o1 != o3);
+    CHECK(o3 != o1);
+
     // Erase key
     CHECK(obj.erase("version"));
     CHECK_EQ(obj.size(), 2);

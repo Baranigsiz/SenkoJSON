@@ -9,6 +9,7 @@
 #include <cstring>
 #include <string_view>
 #include <limits>
+#include <cmath>
 
 namespace senko {
 
@@ -18,6 +19,30 @@ public:
 };
 
 namespace detail {
+
+inline double decode_half_float(uint16_t raw) {
+    uint16_t sign = (raw >> 15) & 0x0001;
+    uint16_t exp  = (raw >> 10) & 0x001F;
+    uint16_t mant = raw & 0x03FF;
+
+    double val = 0.0;
+    if (exp == 0) {
+        if (mant == 0) {
+            val = 0.0;
+        } else {
+            val = std::ldexp(static_cast<double>(mant), -24);
+        }
+    } else if (exp == 31) {
+        if (mant == 0) {
+            val = std::numeric_limits<double>::infinity();
+        } else {
+            val = std::numeric_limits<double>::quiet_NaN();
+        }
+    } else {
+        val = std::ldexp(static_cast<double>(1024 + mant), static_cast<int>(exp) - 25);
+    }
+    return sign ? -val : val;
+}
 
 inline void cbor_write_type_and_val(std::vector<uint8_t>& out, uint8_t major, uint64_t val) {
     uint8_t m = static_cast<uint8_t>(major << 5);
@@ -106,10 +131,15 @@ inline void serialize_cbor_impl(const value& v, std::vector<uint8_t>& out) {
 
 class cbor_reader {
 public:
+    static constexpr size_t max_depth = 512;
+
     cbor_reader(const uint8_t* data, size_t size)
-        : m_data(data), m_size(size), m_pos(0) {}
+        : m_data(data), m_size(size), m_pos(0), m_depth(0) {}
 
     value parse() {
+        if (m_depth > max_depth) {
+            throw cbor_error("Maximum CBOR nesting depth exceeded (potential stack overflow)");
+        }
         if (m_pos >= m_size) {
             throw cbor_error("Unexpected end of CBOR input");
         }
@@ -143,9 +173,11 @@ public:
                 }
                 value::array_t arr;
                 arr.reserve(static_cast<size_t>((std::min)(val, uint64_t(4096))));
+                m_depth++;
                 for (size_t i = 0; i < val; ++i) {
                     arr.push_back(parse());
                 }
+                m_depth--;
                 return value(std::move(arr));
             }
             case 5: { // Map
@@ -154,6 +186,7 @@ public:
                 }
                 value::object_t obj;
                 obj.reserve(static_cast<size_t>((std::min)(val, uint64_t(4096))));
+                m_depth++;
                 for (size_t i = 0; i < val; ++i) {
                     value key_v = parse();
                     if (!key_v.is_string()) {
@@ -162,12 +195,16 @@ public:
                     value val_v = parse();
                     obj.emplace_back(std::move(key_v.get_ref_string()), std::move(val_v));
                 }
+                m_depth--;
                 return value(std::move(obj));
             }
             case 7: { // Simple / Float
                 if (info == 20) return value(false);
                 if (info == 21) return value(true);
                 if (info == 22) return value(nullptr);
+                if (info == 25) { // float 16 (half-precision)
+                    return value(decode_half_float(static_cast<uint16_t>(val)));
+                }
                 if (info == 26) { // float 32
                     uint32_t raw = static_cast<uint32_t>(val);
                     float f = 0.0f;
@@ -191,6 +228,7 @@ private:
     const uint8_t* m_data;
     size_t m_size;
     size_t m_pos;
+    size_t m_depth;
 
     void ensure_bytes(size_t n) {
         if (m_pos + n > m_size) {

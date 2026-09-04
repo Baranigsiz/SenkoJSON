@@ -144,6 +144,13 @@ inline void apply_patch_op(value& doc, const value& op_obj) {
             throw patch_error("Cannot move from root JSON document");
         }
 
+        // RFC 6902: "from" location MUST NOT be a proper prefix of "path"
+        if (path_str.size() > from_str.size() &&
+            path_str.compare(0, from_str.size(), from_str) == 0 &&
+            path_str[from_str.size()] == '/') {
+            throw patch_error("'from' location cannot be a proper prefix of 'path' in move operation");
+        }
+
         // Value to move
         value val = from_ptr.resolve(doc);
 

@@ -185,10 +185,15 @@ inline void serialize_msgpack_impl(const value& v, std::vector<uint8_t>& out) {
 
 class msgpack_reader {
 public:
+    static constexpr size_t max_depth = 512;
+
     msgpack_reader(const uint8_t* data, size_t size)
-        : m_data(data), m_size(size), m_pos(0) {}
+        : m_data(data), m_size(size), m_pos(0), m_depth(0) {}
 
     value parse() {
+        if (m_depth > max_depth) {
+            throw msgpack_error("Maximum MessagePack nesting depth exceeded (potential stack overflow)");
+        }
         if (m_pos >= m_size) {
             throw msgpack_error("Unexpected end of MessagePack input");
         }
@@ -219,6 +224,23 @@ public:
             case 0xC0: return value(nullptr);
             case 0xC2: return value(false);
             case 0xC3: return value(true);
+            case 0xC4: { // bin 8
+                ensure_bytes(1);
+                size_t len = m_data[m_pos++];
+                return parse_string_bytes(len);
+            }
+            case 0xC5: { // bin 16
+                ensure_bytes(2);
+                size_t len = read_u16_be(&m_data[m_pos]);
+                m_pos += 2;
+                return parse_string_bytes(len);
+            }
+            case 0xC6: { // bin 32
+                ensure_bytes(4);
+                size_t len = read_u32_be(&m_data[m_pos]);
+                m_pos += 4;
+                return parse_string_bytes(len);
+            }
             case 0xCA: { // float 32
                 ensure_bytes(4);
                 uint32_t raw = read_u32_be(&m_data[m_pos]);
@@ -329,6 +351,7 @@ private:
     const uint8_t* m_data;
     size_t m_size;
     size_t m_pos;
+    size_t m_depth;
 
     void ensure_bytes(size_t n) {
         if (m_pos + n > m_size) {
@@ -349,9 +372,11 @@ private:
         }
         value::array_t arr;
         arr.reserve((std::min)(len, size_t(4096)));
+        m_depth++;
         for (size_t i = 0; i < len; ++i) {
             arr.push_back(parse());
         }
+        m_depth--;
         return value(std::move(arr));
     }
 
@@ -361,6 +386,7 @@ private:
         }
         value::object_t obj;
         obj.reserve((std::min)(len, size_t(4096)));
+        m_depth++;
         for (size_t i = 0; i < len; ++i) {
             value key_v = parse();
             if (!key_v.is_string()) {
@@ -369,6 +395,7 @@ private:
             value val_v = parse();
             obj.emplace_back(std::move(key_v.get_ref_string()), std::move(val_v));
         }
+        m_depth--;
         return value(std::move(obj));
     }
 };

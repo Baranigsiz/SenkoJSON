@@ -67,7 +67,7 @@ Whether you're developing game engines, low-latency microservices, hardware conf
 | **Parsing & File I/O** | `json::parse()`, `json::parse_file()`, `""_json` | `json j = json::parse(str);`, `json j = "{\"a\":1}"_json;` |
 | **JSONC (Configs with Comments)** | `jsonc::parse()`, `jsonc::parse_file()`, `""_jsonc` | `json j = senko::jsonc::parse_file("config.jsonc");` |
 | **JSONL / NDJSON Streaming** | `jsonl_reader`, `jsonl::from_file()` | `for (auto doc : senko::jsonl::from_file("data.jsonl")) { ... }` |
-| **Dumping & Output** | `dump(indent)`, `dump_file(path, indent)`, `operator<<` | `std::string s = j.dump(4);`, `j.dump_file("out.json", 2);` |
+| **Dumping & Output** | `dump(indent)`, `dump(os, indent)`, `dump_file(path, indent)`, `operator<<` | `j.dump(std::cout, 2);`, `std::string s = j.dump(4);` |
 | **Type Inspection** | `is_null()`, `is_boolean()`, `is_number()`, `is_string()`, `is_array()`, `is_object()` | `if (j["age"].is_number()) { ... }` |
 | **Element Access** | `operator[]`, `at()`, `find()`, `get<T>()`, `value_or(key, default)` | `int x = j["count"].get<int>();`, `std::string s = j.value_or("k", "fallback");` |
 | **Iterators & Views** | `begin()`, `end()`, `items()` (Structured Binding) | `for (auto& [k, v] : j.items()) { ... }` |
@@ -78,8 +78,8 @@ Whether you're developing game engines, low-latency microservices, hardware conf
 | **JSON Merge Patch (RFC 7396)** | `merge_patch()`, `merge_patch_in_place()` | `j.merge_patch_in_place(delta_patch);` |
 | **JSON Schema (Draft-07)** | `validate(schema, &err)`, `senko::schema` | `if (j.validate(schema, &err)) { ... }` |
 | **Streaming SAX** | `senko::sax_parse(input, handler)` | `senko::sax_parse(log_stream, custom_sax_handler);` |
-| **Binary Formats** | `to_msgpack()`, `from_msgpack()`, `to_cbor()`, `from_cbor()` | `auto bin = senko::to_msgpack(j); json j2 = senko::from_msgpack(bin);` |
-| **Struct Reflection** | `SENKO_BIND(StructName, member1, ...)` | `SENKO_BIND(Player, name, score, level)` |
+| **Binary Formats** | `to_msgpack()`, `from_msgpack()`, `to_cbor()`, `from_cbor()` | `auto bin = senko::to_msgpack(j); json j2 = senko::from_cbor(bin);` |
+| **Struct Reflection** | `SENKO_BIND(Struct, ...)`, `SENKO_BIND_INTRUSIVE(Class, ...)` | `SENKO_BIND(Player, name, score);`, `SENKO_BIND_INTRUSIVE(User, secret)` |
 
 ---
 
@@ -99,7 +99,7 @@ Whether you're developing game engines, low-latency microservices, hardware conf
 
 ### ⚡ Why SenkoJSON? (Feature & Performance Comparison)
 
-| Feature / Metric | SenkoJSON v2.5.0 | nlohmann/json | RapidJSON |
+| Feature / Metric | SenkoJSON v2.6.0 | nlohmann/json | RapidJSON |
 | :--- | :---: | :---: | :---: |
 | **Single-Header File Size** | 🏆 **~125 KB** (Compact & Lean) | 🐌 **~2.8 MB** (32,000 lines) | ~1.1 MB |
 | **Clean Build Compile Time** | ⚡ **~0.5 - 1.2s** (Ultra-Fast) | 🐢 **8 - 25s** (Heavy Template Bloat) | ~1.5s |
@@ -169,7 +169,7 @@ int main() {
 
 ## 📦 Binary JSON (MessagePack & CBOR)
 
-Effortlessly compress and transmit your data in standard binary formats:
+Effortlessly compress and transmit your data in standard binary formats with wire-speed throughput, recursion guards, and full standard coverage (including MessagePack `bin 8/16/32` byte strings and CBOR RFC 8949 IEEE 754 half-precision Float16):
 
 ```cpp
 #include <senko/senko.hpp>
@@ -181,11 +181,11 @@ json data = {
     {"inventory", {"Staff", "Orb"}}
 };
 
-// 1. MessagePack Serialization
+// 1. MessagePack Serialization (Supports integers, floats, strings, bins, maps, arrays)
 std::vector<uint8_t> msgpack_bytes = senko::to_msgpack(data);
 json from_msg = senko::from_msgpack(msgpack_bytes);
 
-// 2. CBOR Serialization (RFC 8949)
+// 2. CBOR Serialization (RFC 8949 with Float16/Float32/Float64 decoding)
 std::vector<uint8_t> cbor_bytes = senko::to_cbor(data);
 json from_cbor = senko::from_cbor(cbor_bytes);
 ```
@@ -346,7 +346,7 @@ int main() {
 
 ## 🧬 Struct Reflection & Serialization
 
-SenkoJSON makes binding C++ structures to JSON effortless:
+SenkoJSON makes binding C++ structures and classes to JSON effortless with both external and intrusive macros (supporting up to 32 fields):
 
 ```cpp
 #include <iostream>
@@ -354,6 +354,7 @@ SenkoJSON makes binding C++ structures to JSON effortless:
 
 using json = senko::json;
 
+// 1. External binding for public structs
 struct ServerConfig {
     std::string host;
     int port;
@@ -361,23 +362,33 @@ struct ServerConfig {
 };
 SENKO_BIND(ServerConfig, host, port, ssl)
 
-struct AppConfig {
-    std::string app_name;
-    ServerConfig server;
+// 2. Intrusive binding for classes with private / protected members
+class SecretAgent {
+private:
+    std::string codename;
+    int clearance_level;
+    SENKO_BIND_INTRUSIVE(SecretAgent, codename, clearance_level)
+
+public:
+    SecretAgent() = default;
+    SecretAgent(std::string name, int clearance)
+        : codename(std::move(name)), clearance_level(clearance) {}
+
+    const std::string& get_codename() const { return codename; }
+    int get_clearance() const { return clearance_level; }
 };
-SENKO_BIND(AppConfig, app_name, server)
 
 int main() {
-    // 1. C++ Struct -> JSON
-    AppConfig config{"MyService", ServerConfig{"127.0.0.1", 8080, true}};
-    json j = config;
+    // Public struct -> JSON
+    ServerConfig cfg{"127.0.0.1", 8080, true};
+    json j = cfg;
     std::cout << j.dump(2) << "\n";
 
-    // 2. JSON -> C++ Struct
-    std::string input = R"({"app_name":"NewService","server":{"host":"0.0.0.0","port":9000,"ssl":false}})";
-    AppConfig loaded = json::parse(input).get<AppConfig>();
+    // JSON -> Class with private fields
+    json agent_json = R"({"codename": "007", "clearance_level": 9})"_json;
+    SecretAgent agent = agent_json.get<SecretAgent>();
+    std::cout << "Agent: " << agent.get_codename() << " (Clearance " << agent.get_clearance() << ")\n";
 
-    std::cout << "Loaded host: " << loaded.server.host << ":" << loaded.server.port << "\n";
     return 0;
 }
 ```

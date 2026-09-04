@@ -115,9 +115,35 @@ namespace senko {
         SENKO_EXPAND(SENKO_CONCAT(SENKO_FROM_, SENKO_NARGS(__VA_ARGS__))(v, __VA_ARGS__)) \
     }
 
+/**
+ * @brief Macro to define struct/class serialization & deserialization functions inside a class definition.
+ * Allows serialization of private and protected members via friend functions.
+ * Usage:
+ * class User {
+ * private:
+ *     std::string name;
+ *     int age;
+ *     SENKO_BIND_INTRUSIVE(User, name, age)
+ * };
+ */
+#define SENKO_BIND_INTRUSIVE(Type, ...) \
+    friend void to_json(::senko::value& j, const Type& v) { \
+        j = ::senko::value::object(); \
+        SENKO_EXPAND(SENKO_CONCAT(SENKO_TO_, SENKO_NARGS(__VA_ARGS__))(v, __VA_ARGS__)) \
+    } \
+    friend void from_json(const ::senko::value& j, Type& v) { \
+        if (!j.is_object()) { \
+            throw ::senko::type_error("Expected object for struct deserialization, got " + std::string(j.type_name())); \
+        } \
+        SENKO_EXPAND(SENKO_CONCAT(SENKO_FROM_, SENKO_NARGS(__VA_ARGS__))(v, __VA_ARGS__)) \
+    }
+
 // Aliases for convenience & backwards compatibility
 #define SENKO_DEFINE_TYPE(Type, ...) SENKO_BIND(Type, __VA_ARGS__)
+#define SENKO_DEFINE_TYPE_INTRUSIVE(Type, ...) SENKO_BIND_INTRUSIVE(Type, __VA_ARGS__)
 #define COREJSON_BIND(Type, ...) SENKO_BIND(Type, __VA_ARGS__)
 #define COREJSON_DEFINE_TYPE(Type, ...) SENKO_BIND(Type, __VA_ARGS__)
+#define COREJSON_BIND_INTRUSIVE(Type, ...) SENKO_BIND_INTRUSIVE(Type, __VA_ARGS__)
+#define COREJSON_DEFINE_TYPE_INTRUSIVE(Type, ...) SENKO_BIND_INTRUSIVE(Type, __VA_ARGS__)
 
 } // namespace senko

@@ -311,13 +311,6 @@ public:
             if (c < 0x20) {
                 throw_parse_error("Unescaped control character in string");
             }
-            if (c == '\n') {
-                m_line++;
-                m_col = 1;
-            } else {
-                m_col++;
-            }
-            m_pos++;
         }
 
         throw_parse_error("Unterminated string literal", start_pos);

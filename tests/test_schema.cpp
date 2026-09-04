@@ -164,3 +164,45 @@ TEST_CASE("JSON Schema - Combinators (allOf, anyOf, oneOf, not, enum)") {
     CHECK(!s_int.validate(json(std::numeric_limits<double>::infinity())));
 }
 
+TEST_CASE("JSON Schema - Regex Caching and Array Pattern") {
+    json pattern_schema = R"({
+        "type": "array",
+        "items": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}-[0-9]{4}$"
+        }
+    })"_json;
+
+    senko::schema s(pattern_schema);
+
+    // Build array with 500 valid entries
+    json valid_arr = json::array();
+    for (int i = 0; i < 500; ++i) {
+        valid_arr.push_back("ABC-1234");
+    }
+    CHECK(s.validate(valid_arr));
+
+    // One invalid entry at the end
+    json invalid_arr = valid_arr;
+    invalid_arr.push_back("invalid-code");
+    std::string err;
+    senko::validation_result res;
+    CHECK(!s.validate(invalid_arr, &res));
+    CHECK(!res.error_message.empty());
+}
+
+TEST_CASE("JSON Schema - Nesting Depth Recursion Guard") {
+    // Build a deeply nested schema: allOf -> allOf -> allOf ... (600 levels)
+    json deep_sch = json::object({{"type", "integer"}});
+    for (int i = 0; i < 600; ++i) {
+        deep_sch = json::object({{"allOf", json::array({std::move(deep_sch)})}});
+    }
+
+    senko::schema s(deep_sch);
+    senko::validation_result res;
+    bool ok = s.validate(42_json, &res);
+    CHECK(!ok);
+    CHECK(res.error_message.find("Maximum schema nesting depth exceeded") != std::string::npos);
+}
+
+

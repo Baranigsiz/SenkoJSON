@@ -17,9 +17,81 @@ namespace senko {
 
 namespace detail {
 
-class fast_string_serializer {
+struct string_writer {
+    std::string& out;
+
+    explicit string_writer(std::string& s) : out(s) {}
+
+    void push_back(char c) {
+        out.push_back(c);
+    }
+
+    void append(const char* data, size_t len) {
+        out.append(data, len);
+    }
+
+    void append(std::string_view sv) {
+        out.append(sv.data(), sv.size());
+    }
+
+    void append_n(size_t n, char c) {
+        out.append(n, c);
+    }
+};
+
+struct stream_writer {
+    std::ostream& os;
+    char buf[4096];
+    size_t pos = 0;
+
+    explicit stream_writer(std::ostream& s) : os(s) {}
+
+    ~stream_writer() {
+        flush();
+    }
+
+    void flush() {
+        if (pos > 0) {
+            os.write(buf, pos);
+            pos = 0;
+        }
+    }
+
+    void push_back(char c) {
+        if (pos >= sizeof(buf)) flush();
+        buf[pos++] = c;
+    }
+
+    void append(const char* data, size_t len) {
+        if (len >= sizeof(buf)) {
+            flush();
+            os.write(data, len);
+        } else {
+            if (pos + len > sizeof(buf)) flush();
+            std::memcpy(buf + pos, data, len);
+            pos += len;
+        }
+    }
+
+    void append(std::string_view sv) {
+        append(sv.data(), sv.size());
+    }
+
+    void append_n(size_t n, char c) {
+        while (n > 0) {
+            if (pos >= sizeof(buf)) flush();
+            size_t chunk = (std::min)(n, sizeof(buf) - pos);
+            std::memset(buf + pos, c, chunk);
+            pos += chunk;
+            n -= chunk;
+        }
+    }
+};
+
+template <typename Writer>
+class basic_serializer {
 public:
-    explicit fast_string_serializer(std::string& out, int indent = -1)
+    explicit basic_serializer(Writer& out, int indent = -1)
         : m_out(out), m_indent(indent), m_depth(0) {}
 
     void dump(const value& v) {
@@ -85,14 +157,14 @@ public:
     }
 
 private:
-    std::string& m_out;
+    Writer& m_out;
     int m_indent;
     int m_depth;
 
     void indent_newline() {
         if (m_indent >= 0) {
             m_out.push_back('\n');
-            m_out.append(static_cast<size_t>(m_depth * m_indent), ' ');
+            m_out.append_n(static_cast<size_t>(m_depth * m_indent), ' ');
         }
     }
 
@@ -187,6 +259,8 @@ private:
     }
 };
 
+using fast_string_serializer = basic_serializer<string_writer>;
+
 } // namespace detail
 
 class serializer {
@@ -195,16 +269,23 @@ public:
         : m_os(os), m_indent(indent) {}
 
     void dump(const value& v) {
-        std::string s = dump_to_string(v, m_indent);
-        m_os << s;
+        dump_to_stream(v, m_os, m_indent);
     }
 
     static std::string dump_to_string(const value& v, int indent = -1) {
         std::string out;
         out.reserve(256);
-        detail::fast_string_serializer s(out, indent);
+        detail::string_writer writer(out);
+        detail::basic_serializer<detail::string_writer> s(writer, indent);
         s.dump(v);
         return out;
+    }
+
+    static void dump_to_stream(const value& v, std::ostream& os, int indent = -1) {
+        detail::stream_writer writer(os);
+        detail::basic_serializer<detail::stream_writer> s(writer, indent);
+        s.dump(v);
+        writer.flush();
     }
 
     static void dump_to_file(const value& v, const std::string& filepath, int indent = -1) {
@@ -212,8 +293,7 @@ public:
         if (!file.is_open()) {
             throw serializer_error("Failed to open file for writing: " + filepath);
         }
-        std::string s = dump_to_string(v, indent);
-        file.write(s.data(), s.size());
+        dump_to_stream(v, file, indent);
     }
 
 private:
@@ -227,8 +307,7 @@ inline std::string value::dump(int indent) const {
 }
 
 inline void value::dump(std::ostream& os, int indent) const {
-    std::string s = dump(indent);
-    os << s;
+    serializer::dump_to_stream(*this, os, indent);
 }
 
 inline void value::dump_file(const std::string& filepath, int indent) const {
@@ -236,8 +315,7 @@ inline void value::dump_file(const std::string& filepath, int indent) const {
 }
 
 inline std::ostream& operator<<(std::ostream& os, const value& j) {
-    std::string s = j.dump(-1);
-    os << s;
+    serializer::dump_to_stream(j, os, -1);
     return os;
 }
 

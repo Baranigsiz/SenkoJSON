@@ -5,7 +5,7 @@ import os
 
 class SenkoJSONConan(ConanFile):
     name = "senkojson"
-    version = "2.5.0"
+    version = "2.6.0"
     license = "MIT"
     author = "Baran <https://github.com/Baranigsiz>"
     url = "https://github.com/Baranigsiz/SenkoJSON"

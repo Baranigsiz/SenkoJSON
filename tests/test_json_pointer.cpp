@@ -73,6 +73,13 @@ TEST_CASE("JSON Pointer - Error Handling") {
     // Non-integer index into array
     CHECK_THROWS(doc["/a/b/invalid"_json_pointer]);
 
+    // Leading zeros not allowed per RFC 6901
+    CHECK_THROWS(doc["/a/b/01"_json_pointer]);
+
+    // Plus/minus signs not allowed per RFC 6901
+    CHECK_THROWS(doc["/a/b/+1"_json_pointer]);
+    CHECK_THROWS(doc["/a/b/-1"_json_pointer]);
+
     // Safe fallback value_or() with JSON Pointer
     CHECK_EQ(doc.value_or("/a/b/0"_json_pointer, 0), 10);
     CHECK_EQ(doc.value_or("/a/b/99"_json_pointer, 999), 999);
